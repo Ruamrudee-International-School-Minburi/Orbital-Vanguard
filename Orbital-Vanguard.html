@@ -1,0 +1,2531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbital Vanguard - 3D Rocket & Station Simulator</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #020617;
+      color: #f8fafc;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      user-select: none;
+    }
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    .hud-panel {
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(56, 189, 248, 0.22);
+      box-shadow: 0 10px 35px -5px rgba(0, 0, 0, 0.65);
+    }
+    .hud-panel-subtle {
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 16px rgba(6, 182, 212, 0.45);
+    }
+    .glow-green {
+      box-shadow: 0 0 18px rgba(34, 197, 94, 0.55);
+    }
+    .glow-amber {
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.55);
+    }
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.5);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #0284c7;
+      border-radius: 3px;
+    }
+    #navball-canvas {
+      border-radius: 50%;
+      border: 2px solid #38bdf8;
+      background: #080d1a;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+    }
+    .pulsing-badge {
+      animation: pulseBeacon 2s infinite ease-in-out;
+    }
+    @keyframes pulseBeacon {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.08); opacity: 0.85; }
+    }
+    /* Master Graphic Throttle Styles */
+    .master-throttle-rail {
+      background: linear-gradient(90deg, rgba(15,23,42,0.95), rgba(30,41,59,0.9));
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(56,189,248,0.2);
+    }
+    .throttle-notch-btn {
+      transition: all 0.15s ease;
+    }
+    .throttle-notch-btn:hover {
+      background-color: rgba(56, 189, 248, 0.25);
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+  </style>
+</head>
+<body class="w-full h-full relative">
+
+  <!-- 3D WebGL Canvas Viewport -->
+  <div id="canvas-container"></div>
+
+  <div id="ui-root" class="relative z-10 w-full h-full pointer-events-none flex flex-col justify-between p-3">
+    
+    <!-- TOP NAVIGATION & STATUS BAR -->
+    <header class="w-full flex justify-between items-center pointer-events-auto">
+      <div class="flex items-center space-x-3 bg-slate-950/80 hud-panel px-3.5 py-2 rounded-2xl">
+        <div class="w-8 h-8 rounded-xl bg-sky-600 flex items-center justify-center glow-cyan">
+          <i class="fa-solid fa-satellite-dish text-white text-sm"></i>
+        </div>
+        <div>
+          <h1 class="text-xs font-black tracking-widest text-sky-400">ORBITAL VANGUARD</h1>
+          <p class="text-[10px] text-slate-400 font-mono" id="sim-status-text">MISSION CONTROL // READY</p>
+        </div>
+      </div>
+
+      <!-- Mode Switcher Buttons -->
+      <div class="flex items-center space-x-1.5 hud-panel p-1 rounded-2xl">
+        <button id="btn-mode-station" onclick="setAppMode('STATION_BUILDER')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800">
+          <i class="fa-solid fa-cubes text-amber-400"></i> Station Designer
+        </button>
+        <button id="btn-mode-rocket" onclick="setAppMode('ROCKET_BUILDER')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800">
+          <i class="fa-solid fa-rocket text-sky-400"></i> Rocket VAB
+        </button>
+        <button id="btn-mode-flight" onclick="setAppMode('FLIGHT')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-sky-600 text-white glow-cyan">
+          <i class="fa-solid fa-compass"></i> Flight Sim
+        </button>
+        <button id="btn-mode-map" onclick="toggleMapView()" class="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-emerald-400 hover:bg-emerald-950/60 border border-emerald-500/30">
+          <i class="fa-solid fa-globe"></i> Orbital Map [M]
+        </button>
+      </div>
+
+      <!-- Quick Actions, Settings & Time Warp -->
+      <div class="flex items-center space-x-2 hud-panel p-1.5 rounded-2xl">
+        <!-- Dedicated Settings Toggle -->
+        <button onclick="toggleSettingsModal()" id="btn-settings-toggle" title="System Settings" class="px-2.5 py-1 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">
+          <i class="fa-solid fa-gear"></i> Settings
+        </button>
+        <button onclick="toggleAudio()" id="btn-audio" title="Audio Toggle" class="px-2.5 py-1 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 transition">
+          <i class="fa-solid fa-volume-high"></i>
+        </button>
+        <div class="text-[11px] font-mono text-slate-400 px-1">WARP:</div>
+        <button onclick="setTimeWarp(1)" class="time-warp-btn px-2 py-0.5 text-xs rounded-lg bg-sky-600 text-white font-bold" data-warp="1">1x</button>
+        <button onclick="setTimeWarp(2)" class="time-warp-btn px-2 py-0.5 text-xs rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700" data-warp="2">2x</button>
+        <button onclick="setTimeWarp(5)" class="time-warp-btn px-2 py-0.5 text-xs rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700" data-warp="5">5x</button>
+      </div>
+    </header>
+
+    <!-- 1. STATION BUILDER PANEL -->
+    <div id="panel-station-builder" class="pointer-events-auto absolute top-16 left-4 w-88 p-4 hud-panel rounded-2xl flex flex-col gap-3 max-h-[84vh] overflow-y-auto hidden">
+      <div class="flex justify-between items-center border-b border-sky-900 pb-2">
+        <h2 class="text-xs font-bold text-sky-400 flex items-center gap-2">
+          <i class="fa-solid fa-satellite text-amber-400"></i> STATION BLUEPRINT DESIGNER
+        </h2>
+        <span class="text-[11px] text-slate-400" id="station-module-count">Modules: 1</span>
+      </div>
+
+      <p class="text-[11px] text-slate-300 leading-relaxed">
+        Assemble modules over Earth orbit. When ready, launch your rocket to place it in orbit!
+      </p>
+
+      <!-- Module Selection Palette -->
+      <div class="space-y-1.5">
+        <div class="text-[10px] uppercase text-sky-300 font-bold tracking-wider">Add Module to Truss:</div>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="addStationModule('solar')" class="p-2.5 bg-slate-800/80 hover:bg-sky-950 border border-slate-700 hover:border-sky-500 rounded-xl text-left transition flex flex-col">
+            <span class="text-xs font-bold text-sky-400 flex items-center gap-1.5"><i class="fa-solid fa-sun text-amber-400"></i> Solar Wings</span>
+            <span class="text-[9px] text-slate-400 mt-0.5">High-efficiency array</span>
+          </button>
+          <button onclick="addStationModule('hab')" class="p-2.5 bg-slate-800/80 hover:bg-sky-950 border border-slate-700 hover:border-sky-500 rounded-xl text-left transition flex flex-col">
+            <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5"><i class="fa-solid fa-flask text-cyan-300"></i> Science Lab</span>
+            <span class="text-[9px] text-slate-400 mt-0.5">Habitation module</span>
+          </button>
+          <button onclick="addStationModule('dock')" class="p-2.5 bg-slate-800/80 hover:bg-sky-950 border border-slate-700 hover:border-sky-500 rounded-xl text-left transition flex flex-col">
+            <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5"><i class="fa-solid fa-circle-nodes text-emerald-400"></i> Docking Hub</span>
+            <span class="text-[9px] text-slate-400 mt-0.5">Multi-port node</span>
+          </button>
+          <button onclick="addStationModule('cupola')" class="p-2.5 bg-slate-800/80 hover:bg-sky-950 border border-slate-700 hover:border-sky-500 rounded-xl text-left transition flex flex-col">
+            <span class="text-xs font-bold text-indigo-400 flex items-center gap-1.5"><i class="fa-solid fa-eye text-indigo-300"></i> Cupola Dome</span>
+            <span class="text-[9px] text-slate-400 mt-0.5">Observation deck</span>
+          </button>
+          <button onclick="addStationModule('radiator')" class="p-2.5 bg-slate-800/80 hover:bg-sky-950 border border-slate-700 hover:border-sky-500 rounded-xl text-left transition flex flex-col">
+            <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5"><i class="fa-solid fa-wind text-rose-300"></i> Thermal Fins</span>
+            <span class="text-[9px] text-slate-400 mt-0.5">Heat rejection array</span>
+          </button>
+          <button onclick="clearStationDesign()" class="p-2.5 bg-red-950/50 hover:bg-red-900/70 border border-red-800/60 rounded-xl text-left transition flex flex-col justify-center">
+            <span class="text-xs font-bold text-red-300 flex items-center gap-1.5"><i class="fa-solid fa-trash"></i> Reset Core</span>
+            <span class="text-[9px] text-red-400">Revert blueprint</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Station Name -->
+      <div>
+        <label class="text-[10px] uppercase text-slate-400 font-bold">Station Designation:</label>
+        <input id="station-name-input" type="text" value="Freedom Alpha Station" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-sky-200 mt-1 focus:outline-none focus:border-sky-400 font-mono">
+      </div>
+
+      <!-- Station Stats -->
+      <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 text-[11px] space-y-1 font-mono">
+        <div class="flex justify-between"><span class="text-slate-400">Total Mass:</span><span class="text-sky-300" id="station-mass-val">12.5 Tons</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Docking Ports:</span><span class="text-emerald-400" id="station-dock-val">2 Ports</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Solar Power:</span><span class="text-amber-400" id="station-power-val">45 kW</span></div>
+      </div>
+
+      <button onclick="confirmStationBlueprint()" class="w-full py-2.5 bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs transition shadow-lg flex items-center justify-center gap-2">
+        <i class="fa-solid fa-check"></i> Pack Blueprint Into Rocket Fairing
+      </button>
+    </div>
+
+    <!-- 2. ROCKET BUILDER / EDITOR PANEL -->
+    <div id="panel-rocket-builder" class="pointer-events-auto absolute top-16 left-4 w-88 p-4 hud-panel rounded-2xl flex flex-col gap-3 max-h-[84vh] overflow-y-auto hidden">
+      <div class="flex justify-between items-center border-b border-sky-900 pb-2">
+        <h2 class="text-xs font-bold text-sky-400 flex items-center gap-2">
+          <i class="fa-solid fa-sliders"></i> ROCKET ASSEMBLY (VAB)
+        </h2>
+        <span class="text-xs text-emerald-400 font-bold" id="rocket-preset-label">Heavy Cargo</span>
+      </div>
+
+      <div>
+        <div class="text-[10px] uppercase text-slate-400 font-bold mb-1">Vehicle Preset:</div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button onclick="applyRocketPreset('light')" class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-mono">Light</button>
+          <button onclick="applyRocketPreset('medium')" class="px-2 py-1.5 bg-sky-700 text-white rounded-xl text-xs font-mono font-bold">Medium</button>
+          <button onclick="applyRocketPreset('heavy')" class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-mono">Heavy</button>
+        </div>
+      </div>
+
+      <div class="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300">Solid Boosters (SRBs):</span>
+            <span class="text-sky-400 font-bold" id="val-boosters">2 Boosters</span>
+          </div>
+          <input type="range" min="0" max="4" step="2" value="2" id="slider-boosters" oninput="updateRocketSpec()" class="w-full accent-sky-500 cursor-pointer">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300">Stage 1 Fuel Capacity:</span>
+            <span class="text-sky-400 font-bold" id="val-fuel1">100%</span>
+          </div>
+          <input type="range" min="50" max="150" step="25" value="100" id="slider-fuel1" oninput="updateRocketSpec()" class="w-full accent-sky-500 cursor-pointer">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300">First-Stage Engines:</span>
+            <span class="text-sky-400 font-bold" id="val-engines">3 Engines</span>
+          </div>
+          <input type="range" min="1" max="5" step="2" value="3" id="slider-engines" oninput="updateRocketSpec()" class="w-full accent-sky-500 cursor-pointer">
+        </div>
+
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300">Fairing Payload:</span>
+            <span class="text-emerald-400 font-bold" id="val-payload-status">Station Blueprint</span>
+          </div>
+          <select id="select-payload" onchange="updateRocketSpec()" class="w-full bg-slate-800 text-xs border border-slate-700 rounded-lg p-1.5 text-sky-200">
+            <option value="station">Custom Space Station</option>
+            <option value="capsule">Crew / Docking Ferry Vehicle</option>
+            <option value="probe">Deep Space Explorer Probe</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 text-[11px] font-mono space-y-1">
+        <div class="flex justify-between"><span class="text-slate-400">Liftoff TWR:</span><span class="text-emerald-400 font-bold" id="spec-twr">1.85</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Total Delta-V:</span><span class="text-sky-300 font-bold" id="spec-deltav">4,250 m/s</span></div>
+      </div>
+
+      <button onclick="rolloutToLaunchpad()" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-sky-600 hover:from-emerald-500 hover:to-sky-500 text-white font-bold rounded-xl text-xs transition shadow-lg flex items-center justify-center gap-2 glow-cyan">
+        <i class="fa-solid fa-shuttle-space"></i> Roll Out to Launchpad & Fly!
+      </button>
+    </div>
+
+    <!-- 3. FLIGHT SIMULATOR HUD OVERLAYS -->
+    <div id="panel-flight-hud" class="w-full h-full pointer-events-none flex flex-col justify-between">
+      
+      <!-- Top Telemetry & Target Bar (With Navball moved to Top Left) -->
+      <div class="flex justify-between items-start pt-2">
+        <!-- Orbit Telemetry & Level / Navball Cluster (Top-Left) -->
+        <div class="flex items-start gap-2.5">
+          <!-- Orbit Telemetry Card -->
+          <div class="hud-panel p-3 rounded-2xl pointer-events-auto w-60 text-xs font-mono space-y-1">
+            <div class="flex justify-between text-sky-400 font-bold border-b border-sky-950 pb-1">
+              <span>ORBIT TELEMETRY</span>
+              <span id="telemetry-mode" class="text-amber-400">SUB-ORBITAL</span>
+            </div>
+            <div class="flex justify-between"><span class="text-slate-400">Apoapsis (Ap):</span><span id="tel-ap" class="text-sky-200">0 km</span></div>
+            <div class="flex justify-between"><span class="text-slate-400">Periapsis (Pe):</span><span id="tel-pe" class="text-sky-200">-600 km</span></div>
+            <div class="flex justify-between"><span class="text-slate-400">Altitude:</span><span id="tel-alt" class="text-emerald-300">0.0 km</span></div>
+            <div class="flex justify-between"><span class="text-slate-400">Orbital Speed:</span><span id="tel-vel" class="text-sky-300">0 m/s</span></div>
+            <div class="flex justify-between"><span class="text-slate-400">Atmosphere:</span><span id="tel-atmo" class="text-sky-400">100% (Dense)</span></div>
+          </div>
+
+          <!-- Artificial Horizon / Level Indicator (Moved to Top Left) -->
+          <div class="hud-panel p-2.5 rounded-2xl pointer-events-auto flex flex-col items-center">
+            <div class="text-[9px] font-bold text-sky-400 font-mono tracking-wider mb-1 flex items-center gap-1">
+              <i class="fa-solid fa-crosshairs text-amber-400"></i> HORIZON / LEVEL
+            </div>
+            <canvas id="navball-canvas" width="105" height="105"></canvas>
+            <div class="text-[9px] font-mono text-sky-300 mt-1 flex gap-2 bg-slate-950/80 px-2 py-0.5 rounded-full border border-sky-900">
+              <span>P:<b id="val-pitch">0°</b></span>
+              <span>Y:<b id="val-yaw">0°</b></span>
+              <span>R:<b id="val-roll">0°</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deploy Station in Orbit Banner Button -->
+        <div id="station-deploy-banner" class="hidden pointer-events-auto flex flex-col items-center">
+          <button onclick="deployPayloadAction()" class="pulsing-badge px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-sm tracking-wider shadow-2xl flex items-center gap-2 glow-green border border-emerald-300">
+            <i class="fa-solid fa-satellite text-lg"></i> DEPLOY SPACE STATION IN ORBIT! [P]
+          </button>
+          <span class="text-[10px] text-emerald-300 mt-1 font-mono bg-black/70 px-2 py-0.5 rounded-lg">ORBIT DETECTED // READY FOR SEPARATION</span>
+        </div>
+
+        <!-- Target Rendezvous Panel -->
+        <div id="target-docking-panel" class="hud-panel p-3 rounded-2xl pointer-events-auto w-64 text-xs font-mono space-y-1">
+          <div class="flex justify-between text-emerald-400 font-bold border-b border-emerald-950 pb-1">
+            <span>TARGET & DOCKING</span>
+            <span id="dock-target-name" class="text-slate-300 truncate max-w-[90px]">None</span>
+          </div>
+          <div class="flex justify-between"><span class="text-slate-400">Range:</span><span id="dock-dist" class="text-emerald-300">-- km</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Relative Vel:</span><span id="dock-relvel" class="text-sky-200">-- m/s</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Port Lock:</span><span id="dock-align" class="text-amber-400">--</span></div>
+          <div class="mt-1 pt-1 border-t border-slate-800 flex justify-between">
+            <button onclick="cycleTargetVessel()" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px]">Next Craft</button>
+            <button onclick="autoAlignToTarget()" class="px-2 py-1 bg-sky-900 hover:bg-sky-800 text-sky-200 rounded-lg text-[10px]">SAS Align</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Flight Control Bar & Large Graphic Throttle System -->
+      <div id="flight-bottom-bar" class="flex justify-between items-end pb-2 pointer-events-auto w-full mx-auto px-2">
+        
+        <!-- LEFT CONTROLS: Staging & Throttles -->
+        <div class="hud-panel p-3 rounded-2xl flex flex-col gap-3 w-[22rem]">
+          
+          <!-- Top Row: Vertical Throttle & Staging -->
+          <div class="flex items-stretch gap-4">
+            <!-- Vertical Throttle -->
+            <div class="flex flex-col items-center bg-slate-950/50 p-2 rounded-xl border border-slate-800">
+              <span class="text-[9px] font-bold text-sky-400 mb-2 tracking-wider">PWR</span>
+              <input type="range" id="vertical-throttle-slider" min="0" max="100" value="0" orient="vertical" oninput="setThrottle(this.value)" class="h-24 w-3 accent-emerald-500 cursor-pointer" style="-webkit-appearance: slider-vertical;">
+              <span class="text-[10px] font-mono text-emerald-400 font-bold mt-2" id="vertical-throttle-pct">0%</span>
+            </div>
+
+            <!-- Staging & Systems Column -->
+            <div class="flex-1 flex flex-col gap-2 justify-between">
+              <div class="text-[11px] font-mono text-slate-300 flex justify-between">
+                <span>STAGE: <b id="stage-number" class="text-sky-400 font-bold">1 of 2</b></span>
+                <span class="text-[10px] text-emerald-400" id="fuel-pct-text">FUEL: 100%</span>
+              </div>
+              <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-slate-700">
+                <div id="fuel-bar" class="bg-gradient-to-r from-amber-500 to-emerald-400 h-full w-full transition-all duration-150"></div>
+              </div>
+              <div class="flex gap-2">
+                <button id="btn-stage" onclick="triggerStaging()" class="py-2 px-3 bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-1.5 flex-1">
+                  <i class="fa-solid fa-fire"></i> STAGE [SPACE]
+                </button>
+                <button id="btn-deploy-payload" onclick="deployPayloadAction()" class="py-2 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-1 border border-emerald-400/50">
+                  <i class="fa-solid fa-satellite"></i> DEPLOY [P]
+                </button>
+              </div>
+              <div class="flex gap-1">
+                <button onclick="toggleRCS()" id="btn-rcs" class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold transition">RCS: OFF</button>
+                <button onclick="toggleSAS()" id="btn-sas" class="flex-1 py-1.5 bg-sky-900 hover:bg-sky-800 text-sky-300 rounded-lg text-[9px] font-bold transition">SAS: ON</button>
+                <button onclick="autoCircularizeOrbit()" title="Orbit Insertion Helper" class="px-2 py-1.5 bg-purple-900 hover:bg-purple-800 text-purple-200 rounded-lg text-[9px] font-bold transition">ORB [O]</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Row: Smaller Graphic Master Throttle -->
+          <div class="w-full master-throttle-rail p-2.5 rounded-xl flex flex-col gap-1.5 border border-sky-500/30">
+            <div class="flex justify-between items-center text-xs font-mono">
+              <span class="text-sky-400 font-bold text-[10px] flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> MASTER THRUST
+              </span>
+              <span class="text-[9px] text-emerald-300 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700 font-bold" id="graphic-thrust-kn">0.0 kN</span>
+            </div>
+
+            <!-- Graphic Slider Track -->
+            <div class="relative w-full h-5 bg-slate-950 rounded-lg overflow-hidden border border-slate-700 flex items-center">
+              <div id="graphic-throttle-fill" class="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-sky-600 via-emerald-500 to-amber-500 transition-all duration-75 w-0 opacity-90"></div>
+              <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent_19px,rgba(0,0,0,0.5)_20px)] bg-[size:20px_100%] pointer-events-none"></div>
+              <input type="range" id="master-graphic-slider" min="0" max="100" value="0" oninput="setThrottle(this.value)" class="relative z-10 w-full h-full opacity-0 cursor-ew-resize">
+            </div>
+
+            <div class="flex justify-between font-bold text-[9px]">
+              <button onclick="setThrottle(0)" class="text-slate-400 hover:text-sky-300">CUT (0%)</button>
+              <button onclick="setThrottle(50)" class="text-slate-400 hover:text-sky-300">50%</button>
+              <button onclick="setThrottle(100)" class="text-emerald-400 hover:text-emerald-300">MAX IMPULSE</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT CONTROLS: Guidance Keys Helper -->
+        <div class="hud-panel p-3 rounded-2xl text-[11px] font-mono text-slate-300 w-48 space-y-1">
+          <div class="text-sky-400 font-bold border-b border-sky-950 pb-1 mb-1.5 flex justify-between">
+            <span>FLIGHT GUIDANCE</span>
+          </div>
+          <div><b class="text-sky-300">W/S:</b> Pitch Up/Down</div>
+          <div><b class="text-sky-300">A/D:</b> Yaw Left/Right</div>
+          <div><b class="text-sky-300">Q/E:</b> Roll Left/Right</div>
+          <div><b class="text-sky-300">Shift/Ctrl:</b> Throttle</div>
+          <div><b class="text-sky-300">I/K/J/L:</b> RCS Translation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. ORBITAL MAP VIEW (UNCOVERED: 3D EARTH FULLY VISIBLE) -->
+    <div id="panel-map-overlay" class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-4 hidden">
+      <!-- Top Map Navigation Ribbon -->
+      <div class="flex justify-between items-center pointer-events-auto bg-slate-950/80 hud-panel p-3 rounded-2xl">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center glow-green">
+            <i class="fa-solid fa-earth-americas text-white text-base"></i>
+          </div>
+          <div>
+            <h2 class="text-sm font-extrabold text-emerald-400 tracking-wider">TACTICAL ORBITAL FLEET MAP</h2>
+            <p class="text-[10px] text-slate-400 font-mono">EARTH KEPLERIAN ORBIT SYSTEM // FREE 3D ROTATION & ZOOM</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <div class="text-xs text-sky-300 font-mono bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800">
+            <i class="fa-solid fa-arrows-up-down-left-right text-slate-400 mr-1.5"></i>Drag to Orbit Camera | Scroll to Zoom
+          </div>
+          <button onclick="toggleMapView()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700">
+            <i class="fa-solid fa-xmark"></i> Close Map [M]
+          </button>
+        </div>
+      </div>
+
+      <!-- Middle: Side Floating Panels without blocking center 3D Earth -->
+      <div class="flex justify-between items-start mt-4 h-full pointer-events-none pb-12">
+        <!-- Fleet Directory Sidebar -->
+        <div class="w-72 hud-panel p-3 rounded-2xl flex flex-col gap-2 max-h-[72vh] pointer-events-auto">
+          <div class="text-xs font-bold text-sky-400 tracking-wide uppercase flex justify-between border-b border-sky-950 pb-1.5">
+            <span>Fleet Vessels</span>
+            <span id="map-fleet-count" class="text-slate-400 font-mono">1 Active</span>
+          </div>
+          <div id="fleet-list-container" class="flex-1 overflow-y-auto space-y-2 pr-1">
+            <!-- Populated dynamically -->
+          </div>
+          <button onclick="spawnNewRocketAtLaunchpad()" class="w-full py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md">
+            <i class="fa-solid fa-plus"></i> Roll Out Another Rocket
+          </button>
+        </div>
+
+        <!-- Selected Vessel Stats Card (Floating Right) -->
+        <div class="w-80 hud-panel p-4 rounded-2xl flex flex-col gap-2.5 pointer-events-auto">
+          <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+            <div>
+              <span class="text-[9px] text-sky-400 font-bold uppercase tracking-wider">Tracked Vehicle</span>
+              <h3 class="text-sm font-extrabold text-white" id="map-selected-name">Vanguard-1 Heavy</h3>
+              <span class="text-[10px] text-emerald-400 font-mono" id="map-selected-status">STABLE CIRCULAR ORBIT</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <button id="btn-switch-vessel" onclick="switchControlToSelectedVessel()" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg transition flex items-center gap-1">
+                <i class="fa-solid fa-gamepad"></i> Control
+              </button>
+              <button id="btn-target-vessel" onclick="setVesselAsTarget()" class="px-2.5 py-1 bg-sky-800 hover:bg-sky-700 text-sky-200 text-[11px] font-bold rounded-lg transition flex items-center gap-1">
+                <i class="fa-solid fa-bullseye"></i> Target
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 font-mono text-[11px]">
+            <div class="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[9px]">APOAPSIS (Ap)</div>
+              <div class="text-sky-300 font-bold" id="map-orbit-ap">240 km</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[9px]">PERIAPSIS (Pe)</div>
+              <div class="text-sky-300 font-bold" id="map-orbit-pe">235 km</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[9px]">ORBIT SPEED</div>
+              <div class="text-emerald-300 font-bold" id="map-orbit-speed">7,680 m/s</div>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+              <div class="text-slate-400 text-[9px]">LAUNCH BASE DIST</div>
+              <div class="text-amber-300 font-bold" id="map-launchpad-dist">1,420 km</div>
+            </div>
+          </div>
+
+          <!-- Launch Site Quick Center -->
+          <button onclick="centerCameraOnLaunchSite()" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-mono font-bold flex items-center justify-center gap-2 transition">
+            <i class="fa-solid fa-location-dot text-amber-400"></i> Center on Launch Complex Alpha
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. DEDICATED SETTINGS MODAL DIALOG -->
+    <div id="modal-settings" class="fixed inset-0 z-30 pointer-events-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+      <div class="w-full max-w-lg hud-panel p-5 rounded-3xl flex flex-col gap-4 border border-sky-500/30 shadow-2xl">
+        <div class="flex justify-between items-center border-b border-sky-900 pb-3">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-sky-600 flex items-center justify-center glow-cyan">
+              <i class="fa-solid fa-gear text-white text-sm"></i>
+            </div>
+            <h2 class="text-sm font-extrabold text-sky-400 tracking-wider">SIMULATION SETTINGS & ASSISTS</h2>
+          </div>
+          <button onclick="toggleSettingsModal()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="space-y-3.5 text-xs font-mono max-h-[60vh] overflow-y-auto pr-1">
+          <!-- Audio Setting -->
+          <div class="flex justify-between items-center bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+            <div>
+              <div class="font-bold text-slate-200">Synthesized Sound Effects</div>
+              <div class="text-[10px] text-slate-400">WebAudio rocket rumble, staging, RCS thrusters</div>
+            </div>
+            <button onclick="toggleAudio()" id="setting-audio-btn" class="px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold">Enabled</button>
+          </div>
+
+          <!-- Launch Site Pinpoint Marker Visuals -->
+          <div class="flex justify-between items-center bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+            <div>
+              <div class="font-bold text-slate-200">Launchpad Alpha Beacon Reticle</div>
+              <div class="text-[10px] text-slate-400">Pulsing holographic column and HUD badge</div>
+            </div>
+            <button onclick="toggleLaunchBeaconVisual()" id="setting-beacon-btn" class="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold">Visible</button>
+          </div>
+
+          <!-- Orbit Assists -->
+          <div class="flex justify-between items-center bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+            <div>
+              <div class="font-bold text-slate-200">SAS Attitude Hold Assist</div>
+              <div class="text-[10px] text-slate-400">Active aerodynamic & gyroscopic stabilization</div>
+            </div>
+            <button onclick="toggleSAS()" id="setting-sas-btn" class="px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold">Enabled</button>
+          </div>
+
+          <!-- Reset Launch Site -->
+          <div class="flex justify-between items-center bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+            <div>
+              <div class="font-bold text-slate-200">Reset Pad & Fleet</div>
+              <div class="text-[10px] text-slate-400">Recover all craft and reset Vanguard 1 to pad</div>
+            </div>
+            <button onclick="resetAllFleetToDefaults()" class="px-3 py-1.5 rounded-xl bg-red-900/70 hover:bg-red-800 text-red-200 font-bold border border-red-700">Reset All</button>
+          </div>
+
+          <!-- Controls Reference Cheat Sheet -->
+          <div class="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-1 text-[11px]">
+            <div class="font-bold text-sky-400 uppercase text-[10px] tracking-wider mb-1">Keybinding Reference:</div>
+            <div class="grid grid-cols-2 gap-1 text-slate-300">
+              <div><b class="text-sky-300">W / S</b> - Pitch</div>
+              <div><b class="text-sky-300">A / D</b> - Yaw</div>
+              <div><b class="text-sky-300">Q / E</b> - Roll</div>
+              <div><b class="text-sky-300">Shift / Ctrl</b> - Throttle</div>
+              <div><b class="text-sky-300">Space</b> - Stage</div>
+              <div><b class="text-emerald-400">P</b> - Deploy Station</div>
+              <div><b class="text-purple-300">O</b> - Orbit Assist</div>
+              <div><b class="text-sky-300">M</b> - Orbital Map</div>
+              <div><b class="text-sky-300">I / K / J / L</b> - RCS Docking</div>
+              <div><b class="text-amber-300">R</b> - Toggle RCS</div>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="toggleSettingsModal()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold rounded-xl text-xs transition border border-slate-700">
+          Close Settings
+        </button>
+      </div>
+    </div>
+
+    <!-- Pinpoint Floating Reticle for Launch Site on Earth -->
+    <div id="hud-launch-beacon-tag" class="absolute pointer-events-none z-10 hidden flex flex-col items-center -translate-x-1/2 -translate-y-full transition-transform duration-75">
+      <div class="bg-slate-950/85 border border-amber-400/80 px-2 py-1 rounded-lg text-[10px] font-mono text-amber-300 shadow-xl flex items-center gap-1.5">
+        <i class="fa-solid fa-location-crosshairs text-amber-400 text-xs"></i>
+        <span>LAUNCH COMPLEX ALPHA</span>
+        <span id="beacon-dist-text" class="text-slate-400 text-[9px]">(0 km)</span>
+      </div>
+      <div class="w-0.5 h-3 bg-gradient-to-b from-amber-400 to-transparent"></div>
+    </div>
+
+    <!-- Notification Toast Popup -->
+    <div id="hud-toast" class="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-none hud-panel py-2 px-4 rounded-2xl text-xs font-mono text-emerald-300 border border-emerald-500/50 hidden transition-opacity duration-300 shadow-2xl">
+      Notification text
+    </div>
+
+  </div>
+
+  <!-- APPLICATION LOGIC & THREE.JS ENGINE -->
+  <script>
+    /* =========================================================================
+       1. GLOBAL CONSTANTS, MATH & AUDIO ENGINE
+       ========================================================================= */
+    const EARTH_RADIUS = 6000;           
+    const ATMO_HEIGHT = 1200;            
+    const ATMO_RADIUS = EARTH_RADIUS + ATMO_HEIGHT;
+    
+    // MASSIVELY INCREASED GRAVITY (~98 units/s^2 at surface scale)
+    const G_MU = 3528000000;              
+    
+    // Reduced atmospheric density base to allow punching through, but scale height stretches further
+    const AIR_DENSITY_0 = 0.00015;        
+    const STABLE_ORBIT_ALT = 160;       
+
+    // Launch Site World Position (North Pole on Earth sphere)
+    const LAUNCH_PAD_POS = new THREE.Vector3(0, EARTH_RADIUS + 3.6, 0);
+
+    // Astronomical positions for other planets (Scaled up 10x)
+    const SOLAR_SYSTEM_PLANETS = [
+      { name: 'Moon', radius: 1600, distance: 38000, color: 0xc8c8c8, orbitSpeed: 0.0004, angle: 1.2, surface: 'rocky' },
+      { name: 'Venus', radius: 4800, distance: 72000, color: 0xe6b86a, orbitSpeed: 0.00025, angle: 3.4, surface: 'clouds' },
+      { name: 'Mars', radius: 3200, distance: 110000, color: 0xd95f38, orbitSpeed: 0.00018, angle: 5.1, surface: 'desert' },
+      { name: 'Jupiter', radius: 12000, distance: 220000, color: 0xcd9f6b, orbitSpeed: 0.00008, angle: 0.7, surface: 'gas' }
+    ];
+
+    // Audio Context (Synthesized Audio)
+    let audioCtx = null;
+    let engineGain = null;
+    let isAudioMuted = false;
+
+    function initAudio() {
+      if (audioCtx) return;
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+
+        const bufferSize = audioCtx.sampleRate * 2;
+        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = Math.random() * 2 - 1;
+        }
+        const whiteNoise = audioCtx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        whiteNoise.loop = true;
+
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 240;
+
+        engineGain = audioCtx.createGain();
+        engineGain.gain.value = 0;
+
+        whiteNoise.connect(filter);
+        filter.connect(engineGain);
+        engineGain.connect(audioCtx.destination);
+        whiteNoise.start(0);
+      } catch (e) {
+        console.warn('Audio gesture required', e);
+      }
+    }
+
+    function playTone(freq, duration = 0.2, type = 'sine') {
+      if (!audioCtx || isAudioMuted) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function playDockChime() {
+      if (!audioCtx || isAudioMuted) return;
+      setTimeout(() => playTone(523.25, 0.3), 0);
+      setTimeout(() => playTone(659.25, 0.3), 150);
+      setTimeout(() => playTone(783.99, 0.5), 300);
+      setTimeout(() => playTone(1046.5, 0.8), 450);
+    }
+
+    function toggleAudio() {
+      isAudioMuted = !isAudioMuted;
+      const btn = document.getElementById('btn-audio');
+      const settingBtn = document.getElementById('setting-audio-btn');
+      if (isAudioMuted) {
+        btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
+        btn.classList.add('text-red-400');
+        if (settingBtn) {
+          settingBtn.textContent = 'Muted';
+          settingBtn.className = 'px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-bold';
+        }
+        if (engineGain) engineGain.gain.value = 0;
+      } else {
+        btn.innerHTML = '<i class="fa-solid fa-volume-high"></i>';
+        btn.classList.remove('text-red-400');
+        if (settingBtn) {
+          settingBtn.textContent = 'Enabled';
+          settingBtn.className = 'px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold';
+        }
+        initAudio();
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('hud-toast');
+      toast.textContent = msg;
+      toast.classList.remove('hidden');
+      toast.style.opacity = '1';
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.classList.add('hidden'), 300);
+      }, 3200);
+    }
+
+    /* =========================================================================
+       2. SIMULATION STATE & VESSEL MODEL
+       ========================================================================= */
+    const appState = {
+      mode: 'FLIGHT', // 'STATION_BUILDER' | 'ROCKET_BUILDER' | 'FLIGHT'
+      isMapOpen: false,
+      isSettingsOpen: false,
+      isLaunchBeaconVisible: true,
+      timeWarp: 1,
+      vessels: [],
+      activeVesselId: null,
+      targetVesselId: null,
+      mapSelectedVesselId: null,
+      
+      stationBlueprint: {
+        name: 'Freedom Alpha Station',
+        modules: [
+          { type: 'core', position: [0, 0, 0], rot: [0, 0, 0] },
+          { type: 'solar', position: [0, 0, 4.5], rot: [0, 0, 0] },
+          { type: 'solar', position: [0, 0, -4.5], rot: [0, 0, 0] },
+          { type: 'dock', position: [2.5, 0, 0], rot: [0, 0, Math.PI / 2] },
+          { type: 'hab', position: [-2.5, 0, 0], rot: [0, 0, -Math.PI / 2] }
+        ]
+      },
+
+      rocketConfig: {
+        boosters: 2,
+        fuelLevel: 100,
+        engines: 3,
+        payloadType: 'station'
+      },
+
+      keys: {
+        w: false, s: false, a: false, d: false,
+        q: false, e: false, shift: false, ctrl: false,
+        i: false, k: false, j: false, l: false,
+        u: false, o: false
+      },
+      throttle: 0,
+      rcsEnabled: false,
+      sasEnabled: true
+    };
+
+    /* =========================================================================
+       3. THREE.JS SCENE SETUP & EARTH PERSISTENCE
+       ========================================================================= */
+    let scene, camera, renderer, clock;
+    let earthMesh, atmosphereMesh, starsParticles, launchpadGroup, launchSiteBeaconGroup;
+    let sunMesh, sunCoronaMesh, sunLightDirect, sunAmbientLight, sunHemisphereLight;
+    let celestialPlanets = [];
+    let orbitLinesGroup = null;
+    let stationBuilderGroup = null;
+    let rocketBuilderGroup = null;
+
+    // Camera variables
+    let camDistance = 25;
+    let camAngleX = 0.2;
+    let camAngleY = 0;
+    let mapCamDistance = 18000;
+    let mapCamAngleX = 0.4;
+    let mapCamAngleY = 0.8;
+    let isDraggingMouse = false;
+    let prevMouseX = 0;
+    let prevMouseY = 0;
+
+    function initThree() {
+      const container = document.getElementById('canvas-container');
+      
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x020617, 0.00004);
+
+      camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150000);
+      camera.position.set(0, 30, 60);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.25;
+      container.appendChild(renderer.domElement);
+
+      clock = new THREE.Clock();
+
+      // Physical Sun & Vibrant Dynamic Sunlight
+      createSunAndLighting();
+
+      orbitLinesGroup = new THREE.Group();
+      scene.add(orbitLinesGroup);
+
+      // Starfield, Earth, Other Planets & Launchpad
+      createStarfield();
+      createEarth();
+      createSolarSystemPlanets();
+      createLaunchpad();
+      createLaunchSiteBeacon();
+
+      setupInteractions();
+      setupKeyboardControls();
+      initNavball();
+    }
+
+    // Glowing 3D Sun with dynamic lens flares & coronal halos
+    function createSunAndLighting() {
+      const sunPosition = new THREE.Vector3(180000, 100000, 150000);
+
+      // 1. Direct Sun Beam
+      sunLightDirect = new THREE.DirectionalLight(0xfffaed, 2.5);
+      sunLightDirect.position.copy(sunPosition);
+      scene.add(sunLightDirect);
+
+      // 2. Sun Disc Sphere
+      const sunGeo = new THREE.SphereGeometry(6500, 32, 32);
+      const sunMat = new THREE.MeshBasicMaterial({ color: 0xfff6cf });
+      sunMesh = new THREE.Mesh(sunGeo, sunMat);
+      sunMesh.position.copy(sunPosition);
+      scene.add(sunMesh);
+
+      // 3. Coronal Halo Billboard
+      const coronaGeo = new THREE.RingGeometry(6600, 14000, 32);
+      const coronaMat = new THREE.MeshBasicMaterial({
+        color: 0xfde047,
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide
+      });
+      sunCoronaMesh = new THREE.Mesh(coronaGeo, coronaMat);
+      sunCoronaMesh.position.copy(sunPosition);
+      sunCoronaMesh.lookAt(0, 0, 0);
+      scene.add(sunCoronaMesh);
+
+      // 4. Ambient & Hemisphere Lighting so Earth and Craft are ALWAYS visible regardless of time/shadow
+      sunAmbientLight = new THREE.AmbientLight(0x475569, 1.4); // Enhanced ambient ensures full night-side visibility
+      scene.add(sunAmbientLight);
+
+      sunHemisphereLight = new THREE.HemisphereLight(0x93c5fd, 0x1e293b, 1.2);
+      scene.add(sunHemisphereLight);
+    }
+
+    // Procedural Earth surface with enhanced day-night visibility & city lights
+    function createEarth() {
+      const earthCanvas = document.createElement('canvas');
+      earthCanvas.width = 1024;
+      earthCanvas.height = 512;
+      const ctx = earthCanvas.getContext('2d');
+
+      // Ocean deep luminous cyan/navy blue
+      ctx.fillStyle = '#0f4870';
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Continents with emerald green
+      ctx.fillStyle = '#225934';
+      for (let i = 0; i < 54; i++) {
+        const x = (Math.sin(i * 99) * 0.5 + 0.5) * 1024;
+        const y = (Math.cos(i * 37) * 0.5 + 0.5) * 512;
+        const r = 40 + (i % 7) * 22;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Highlands & Desert Gold
+      ctx.fillStyle = '#927341';
+      for (let i = 0; i < 30; i++) {
+        const x = (Math.sin(i * 123) * 0.5 + 0.5) * 1024;
+        const y = (Math.cos(i * 87) * 0.5 + 0.5) * 512;
+        ctx.beginPath();
+        ctx.arc(x, y, 24 + (i % 5) * 12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Procedural City lights (ensures nocturnal hemisphere shines with warm lights)
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.7)';
+      for (let k = 0; k < 180; k++) {
+        const cx = Math.random() * 1024;
+        const cy = Math.random() * 512;
+        ctx.fillRect(cx, cy, 2, 2);
+      }
+
+      // Clouds
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      for (let j = 0; j < 45; j++) {
+        const cx = Math.random() * 1024;
+        const cy = Math.random() * 512;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 80, 22, Math.random() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const earthTexture = new THREE.CanvasTexture(earthCanvas);
+      earthTexture.wrapS = THREE.RepeatWrapping;
+      earthTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+      const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+      // Roughness tuned and emissive ambient tint so Earth is never completely pitch dark
+      const earthMat = new THREE.MeshStandardMaterial({
+        map: earthTexture,
+        roughness: 0.65,
+        metalness: 0.1,
+        emissive: 0x0c2538,
+        emissiveIntensity: 0.35 // Guaranteed visibility at all times!
+      });
+      earthMesh = new THREE.Mesh(earthGeo, earthMat);
+      scene.add(earthMesh);
+
+      // Atmosphere glow
+      const atmoGeo = new THREE.SphereGeometry(ATMO_RADIUS, 48, 48);
+      const atmoMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.BackSide
+      });
+      atmosphereMesh = new THREE.Mesh(atmoGeo, atmoMat);
+      scene.add(atmosphereMesh);
+    }
+
+    // Create other visible solar system planets (Moon, Mars, Venus, Jupiter)
+    function createSolarSystemPlanets() {
+      celestialPlanets = [];
+
+      SOLAR_SYSTEM_PLANETS.forEach(pData => {
+        const pGroup = new THREE.Group();
+        pGroup.name = 'Planet_' + pData.name;
+
+        // Procedural Planet Sphere
+        const pGeo = new THREE.SphereGeometry(pData.radius, 32, 32);
+        let pMat;
+
+        if (pData.surface === 'gas') {
+          // Jupiter striped gas atmosphere
+          const jupCanvas = document.createElement('canvas');
+          jupCanvas.width = 512; jupCanvas.height = 256;
+          const jctx = jupCanvas.getContext('2d');
+          for (let y = 0; y < 256; y += 8) {
+            jctx.fillStyle = (y % 16 === 0) ? '#d97706' : ((y % 32 === 0) ? '#fde68a' : '#b45309');
+            jctx.fillRect(0, y, 512, 8);
+          }
+          const jTex = new THREE.CanvasTexture(jupCanvas);
+          pMat = new THREE.MeshStandardMaterial({ map: jTex, roughness: 0.8, emissive: 0x451a03, emissiveIntensity: 0.25 });
+        } else if (pData.surface === 'desert') {
+          // Mars red rust
+          pMat = new THREE.MeshStandardMaterial({ color: pData.color, roughness: 0.9, emissive: 0x3f1005, emissiveIntensity: 0.25 });
+        } else {
+          pMat = new THREE.MeshStandardMaterial({ color: pData.color, roughness: 0.7, emissive: 0x1f2937, emissiveIntensity: 0.25 });
+        }
+
+        const pMesh = new THREE.Mesh(pGeo, pMat);
+        pGroup.add(pMesh);
+
+        // Subtle atmospheric or orbital ring marker
+        const ringGeo = new THREE.RingGeometry(pData.radius * 1.1, pData.radius * 1.15, 32);
+        ringGeo.rotateX(Math.PI / 2);
+        const ringMat = new THREE.MeshBasicMaterial({ color: pData.color, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
+        pGroup.add(new THREE.Mesh(ringGeo, ringMat));
+
+        // Initial Orbit Placement
+        const px = Math.cos(pData.angle) * pData.distance;
+        const pz = Math.sin(pData.angle) * pData.distance;
+        const py = Math.sin(pData.angle * 2) * (pData.distance * 0.08); // Slight inclination
+        pGroup.position.set(px, py, pz);
+
+        scene.add(pGroup);
+
+        celestialPlanets.push({
+          mesh: pGroup,
+          data: pData,
+          angle: pData.angle
+        });
+      });
+    }
+
+    function createStarfield() {
+      const count = 4500;
+      const starGeo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+
+      for (let i = 0; i < count; i++) {
+        const u = Math.random();
+        const v = Math.random();
+        const theta = 2 * Math.PI * u;
+        const phi = Math.acos(2 * v - 1);
+        const radius = 300000 + Math.random() * 150000;
+
+        positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+        positions[i * 3 + 2] = radius * Math.cos(phi);
+
+        colors[i * 3] = 0.88;
+        colors[i * 3 + 1] = 0.92;
+        colors[i * 3 + 2] = 1.0;
+      }
+
+      starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const starMat = new THREE.PointsMaterial({
+        size: 2.2,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.95
+      });
+      starsParticles = new THREE.Points(starGeo, starMat);
+      scene.add(starsParticles);
+    }
+
+    function createLaunchpad() {
+      launchpadGroup = new THREE.Group();
+      // Pad sits on Earth's surface
+      const baseGeo = new THREE.CylinderGeometry(16, 20, 3, 24);
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.9 });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 1.5;
+
+      const deckGeo = new THREE.CylinderGeometry(10, 10, 0.6, 24);
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5 });
+      const deck = new THREE.Mesh(deckGeo, deckMat);
+      deck.position.y = 3.2;
+
+      const towerGeo = new THREE.BoxGeometry(3, 30, 3);
+      const towerMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, metalness: 0.3 });
+      const tower = new THREE.Mesh(towerGeo, towerMat);
+      tower.position.set(-9, 15, 0);
+
+      const armGeo = new THREE.BoxGeometry(6, 1, 1);
+      const arm = new THREE.Mesh(armGeo, towerMat);
+      arm.position.set(-5, 24, 0);
+
+      launchpadGroup.add(base);
+      launchpadGroup.add(deck);
+      launchpadGroup.add(tower);
+      launchpadGroup.add(arm);
+
+      launchpadGroup.position.set(0, EARTH_RADIUS, 0);
+      scene.add(launchpadGroup);
+    }
+
+    // 3D Pinpointed Launch Beacon (Visible from space, orbit, and map)
+    function createLaunchSiteBeacon() {
+      launchSiteBeaconGroup = new THREE.Group();
+      launchSiteBeaconGroup.name = 'LaunchSiteBeacon';
+
+      // 1. Holographic vertical beacon pillar extending through the atmosphere
+      const pillarGeo = new THREE.CylinderGeometry(0.8, 1.4, ATMO_HEIGHT * 1.5, 16, 1, true);
+      pillarGeo.translate(0, (ATMO_HEIGHT * 1.5) / 2, 0);
+      const pillarMat = new THREE.MeshBasicMaterial({
+        color: 0xf59e0b,
+        transparent: true,
+        opacity: 0.35,
+        side: THREE.DoubleSide
+      });
+      const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+      launchSiteBeaconGroup.add(pillar);
+
+      // 2. Concentric targeting ground rings
+      for (let r = 1; r <= 3; r++) {
+        const ringGeo = new THREE.RingGeometry(r * 8, r * 8 + 0.8, 32);
+        ringGeo.rotateX(-Math.PI / 2);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xf59e0b,
+          transparent: true,
+          opacity: 0.85 - r * 0.2,
+          side: THREE.DoubleSide
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.y = 3.8;
+        ring.name = 'BeaconRing_' + r;
+        launchSiteBeaconGroup.add(ring);
+      }
+
+      // 3. Bright pinpoint marker sphere
+      const markerGeo = new THREE.SphereGeometry(2.5, 16, 16);
+      const markerMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+      const marker = new THREE.Mesh(markerGeo, markerMat);
+      marker.position.y = 5.0;
+      launchSiteBeaconGroup.add(marker);
+
+      launchSiteBeaconGroup.position.copy(LAUNCH_PAD_POS);
+      scene.add(launchSiteBeaconGroup);
+    }
+
+    function toggleLaunchBeaconVisual() {
+      appState.isLaunchBeaconVisible = !appState.isLaunchBeaconVisible;
+      if (launchSiteBeaconGroup) {
+        launchSiteBeaconGroup.visible = appState.isLaunchBeaconVisible;
+      }
+      const btn = document.getElementById('setting-beacon-btn');
+      if (btn) {
+        btn.textContent = appState.isLaunchBeaconVisible ? 'Visible' : 'Hidden';
+        btn.className = appState.isLaunchBeaconVisible
+          ? 'px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold'
+          : 'px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-bold';
+      }
+    }
+
+    /* =========================================================================
+       4. PROCEDURAL 3D CRAFT BUILDERS
+       ========================================================================= */
+
+    function buildRocketMesh(config = appState.rocketConfig) {
+      const group = new THREE.Group();
+      group.name = 'RocketVessel';
+
+      const stage1Height = 14 * (config.fuelLevel / 100);
+      const stage1Geo = new THREE.CylinderGeometry(1.6, 1.6, stage1Height, 24);
+      const stage1Mat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.25, roughness: 0.4 });
+      const stage1Mesh = new THREE.Mesh(stage1Geo, stage1Mat);
+      stage1Mesh.position.y = stage1Height / 2;
+      group.add(stage1Mesh);
+
+      const mountGeo = new THREE.CylinderGeometry(1.6, 1.4, 1.2, 24);
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+      const mountMesh = new THREE.Mesh(mountGeo, darkMat);
+      mountMesh.position.y = 0.6;
+      group.add(mountMesh);
+
+      const engineBellGeo = new THREE.ConeGeometry(0.5, 1.2, 16, 1, true);
+      const bellMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 });
+      
+      const engineCount = config.engines || 3;
+      for (let i = 0; i < engineCount; i++) {
+        const bell = new THREE.Mesh(engineBellGeo, bellMat);
+        const ang = (i / engineCount) * Math.PI * 2;
+        const rad = engineCount === 1 ? 0 : 0.8;
+        bell.position.set(Math.cos(ang) * rad, 0, Math.sin(ang) * rad);
+        group.add(bell);
+      }
+
+      // Dynamic Flame
+      const flameGeo = new THREE.ConeGeometry(1.3, 7, 16);
+      flameGeo.translate(0, -3.5, 0);
+      const flameMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.0 });
+      const flameMesh = new THREE.Mesh(flameGeo, flameMat);
+      flameMesh.name = 'ExhaustFlame';
+      group.add(flameMesh);
+
+      // Stage 2
+      const stage2Geo = new THREE.CylinderGeometry(1.5, 1.5, 6, 24);
+      const stage2Mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.3 });
+      const stage2Mesh = new THREE.Mesh(stage2Geo, stage2Mat);
+      stage2Mesh.position.y = stage1Height + 3;
+      group.add(stage2Mesh);
+
+      // Fairing
+      const fairingConeGeo = new THREE.ConeGeometry(1.7, 5, 24);
+      const fairingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+      const fairingMesh = new THREE.Mesh(fairingConeGeo, fairingMat);
+      fairingMesh.name = 'FairingCone';
+      fairingMesh.position.y = stage1Height + 6 + 2.5;
+      group.add(fairingMesh);
+
+      // Boosters
+      if (config.boosters > 0) {
+        for (let b = 0; b < config.boosters; b++) {
+          const boosterGroup = new THREE.Group();
+          const angle = (b / config.boosters) * Math.PI * 2;
+          const dist = 2.4;
+
+          const srbBodyGeo = new THREE.CylinderGeometry(0.7, 0.7, 12, 16);
+          const srbMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9 });
+          const srbBody = new THREE.Mesh(srbBodyGeo, srbMat);
+
+          const srbNoseGeo = new THREE.ConeGeometry(0.7, 2, 16);
+          const srbNose = new THREE.Mesh(srbNoseGeo, srbMat);
+          srbNose.position.y = 7;
+
+          boosterGroup.add(srbBody);
+          boosterGroup.add(srbNose);
+          boosterGroup.position.set(Math.cos(angle) * dist, 6, Math.sin(angle) * dist);
+          boosterGroup.name = 'Booster_' + b;
+          group.add(boosterGroup);
+        }
+      }
+
+      // Fins
+      for (let f = 0; f < 4; f++) {
+        const finGeo = new THREE.BoxGeometry(0.1, 1.2, 1.2);
+        const finMat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+        const fin = new THREE.Mesh(finGeo, finMat);
+        const ang = (f / 4) * Math.PI * 2;
+        fin.position.set(Math.cos(ang) * 1.9, stage1Height - 1, Math.sin(ang) * 1.9);
+        fin.rotation.y = -ang;
+        group.add(fin);
+      }
+
+      // Docking Ring
+      const portGeo = new THREE.TorusGeometry(0.5, 0.15, 8, 24);
+      const portMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.7 });
+      const portMesh = new THREE.Mesh(portGeo, portMat);
+      portMesh.rotation.x = Math.PI / 2;
+      portMesh.position.y = stage1Height + 6 + 5.1;
+      portMesh.name = 'DockingPort';
+      group.add(portMesh);
+
+      return group;
+    }
+
+    function createModuleMesh(type) {
+      const modGroup = new THREE.Group();
+
+      switch (type) {
+        case 'core': {
+          const cylGeo = new THREE.CylinderGeometry(1.6, 1.6, 4.5, 24);
+          const mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.5, roughness: 0.3 });
+          const cyl = new THREE.Mesh(cylGeo, mat);
+          cyl.rotation.z = Math.PI / 2;
+          modGroup.add(cyl);
+
+          const foilGeo = new THREE.CylinderGeometry(1.62, 1.62, 1.2, 24);
+          const foilMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.8, roughness: 0.2 });
+          const foil = new THREE.Mesh(foilGeo, foilMat);
+          foil.rotation.z = Math.PI / 2;
+          modGroup.add(foil);
+          break;
+        }
+        case 'solar': {
+          const trussGeo = new THREE.BoxGeometry(0.6, 0.6, 3.2);
+          const trussMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.6 });
+          const truss = new THREE.Mesh(trussGeo, trussMat);
+          modGroup.add(truss);
+
+          const panelGeo = new THREE.BoxGeometry(6.5, 0.08, 1.8);
+          const panelMat = new THREE.MeshStandardMaterial({
+            color: 0x0284c7,
+            metalness: 0.7,
+            roughness: 0.2,
+            emissive: 0x0369a1,
+            emissiveIntensity: 0.2
+          });
+          const panel1 = new THREE.Mesh(panelGeo, panelMat);
+          panel1.position.set(4, 0, 0);
+          const panel2 = new THREE.Mesh(panelGeo, panelMat);
+          panel2.position.set(-4, 0, 0);
+
+          modGroup.add(panel1);
+          modGroup.add(panel2);
+          break;
+        }
+        case 'hab': {
+          const sphereGeo = new THREE.SphereGeometry(2.1, 24, 24);
+          const habMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.6 });
+          const sphere = new THREE.Mesh(sphereGeo, habMat);
+          modGroup.add(sphere);
+
+          const antGeo = new THREE.CylinderGeometry(0.05, 0.05, 3, 8);
+          const antMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8 });
+          const ant = new THREE.Mesh(antGeo, antMat);
+          ant.position.y = 2.8;
+          modGroup.add(ant);
+          break;
+        }
+        case 'dock': {
+          const crossNodeGeo = new THREE.SphereGeometry(1.5, 16, 16);
+          const nodeMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.5 });
+          const node = new THREE.Mesh(crossNodeGeo, nodeMat);
+          modGroup.add(node);
+
+          const directions = [
+            [0, 1.5, 0, Math.PI / 2, 0],
+            [0, -1.5, 0, -Math.PI / 2, 0],
+            [1.5, 0, 0, 0, Math.PI / 2],
+            [-1.5, 0, 0, 0, -Math.PI / 2]
+          ];
+          directions.forEach(d => {
+            const portGeo = new THREE.TorusGeometry(0.65, 0.14, 8, 20);
+            const portMat = new THREE.MeshStandardMaterial({ color: 0x10b981, metalness: 0.8 });
+            const p = new THREE.Mesh(portGeo, portMat);
+            p.position.set(d[0], d[1], d[2]);
+            p.rotation.x = d[3];
+            p.rotation.y = d[4];
+            p.name = 'DockingPortRing';
+            modGroup.add(p);
+          });
+          break;
+        }
+        case 'cupola': {
+          const domeGeo = new THREE.CylinderGeometry(1.2, 1.6, 1.2, 12);
+          const domeMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.7, roughness: 0.1 });
+          const dome = new THREE.Mesh(domeGeo, domeMat);
+          dome.position.y = 1;
+          modGroup.add(dome);
+          break;
+        }
+        case 'radiator': {
+          const radGeo = new THREE.BoxGeometry(0.08, 4.5, 2.0);
+          const radMat = new THREE.MeshStandardMaterial({ color: 0xdbeafe, roughness: 0.8 });
+          const rad = new THREE.Mesh(radGeo, radMat);
+          rad.position.y = 2.4;
+          modGroup.add(rad);
+          break;
+        }
+      }
+
+      return modGroup;
+    }
+
+    function buildStationMesh(blueprint = appState.stationBlueprint) {
+      const stationGroup = new THREE.Group();
+      stationGroup.name = 'StationVessel_' + blueprint.name;
+
+      blueprint.modules.forEach(mod => {
+        const mesh = createModuleMesh(mod.type);
+        mesh.position.set(mod.position[0], mod.position[1], mod.position[2]);
+        mesh.rotation.set(mod.rot[0], mod.rot[1], mod.rot[2]);
+        stationGroup.add(mesh);
+      });
+
+      const beaconGeo = new THREE.SphereGeometry(0.2, 8, 8);
+      const beaconMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+      const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+      beacon.position.set(0, 3, 0);
+      beacon.name = 'StationBeacon';
+      stationGroup.add(beacon);
+
+      return stationGroup;
+    }
+
+    /* =========================================================================
+       5. FLEET MANAGEMENT
+       ========================================================================= */
+
+    function createVessel(type, name, position, velocity, customMesh) {
+      const id = 'vessel_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
+      const vessel = {
+        id,
+        type,
+        name,
+        position: position.clone(),
+        velocity: velocity.clone(),
+        orientation: new THREE.Euler(0, 0, 0, 'YXZ'),
+        mesh: customMesh,
+        mass: type === 'station' ? 14000 : 8000,
+        fuel: 100,
+        throttle: 0,
+        stage: 1,
+        isFairingJettisoned: false,
+        isStationDeployed: false,
+        isDocked: false,
+        dockedToId: null,
+        apoapsis: 0,
+        periapsis: 0,
+        orbitalSpeed: 0,
+        altitude: 0,
+        isOrbitStable: false
+      };
+
+      scene.add(customMesh);
+      appState.vessels.push(vessel);
+      return vessel;
+    }
+
+    function initFleet() {
+      appState.vessels.forEach(v => scene.remove(v.mesh));
+      appState.vessels = [];
+
+      const rocketMesh = buildRocketMesh(appState.rocketConfig);
+      rocketMesh.position.copy(LAUNCH_PAD_POS);
+      
+      const primaryRocket = createVessel(
+        'rocket',
+        'Vanguard-1 Heavy',
+        LAUNCH_PAD_POS,
+        new THREE.Vector3(0, 0, 0),
+        rocketMesh
+      );
+
+      appState.activeVesselId = primaryRocket.id;
+      appState.mapSelectedVesselId = primaryRocket.id;
+
+      updateFleetListUI();
+    }
+
+    function getActiveVessel() {
+      return appState.vessels.find(v => v.id === appState.activeVesselId) || appState.vessels[0];
+    }
+
+    function getTargetVessel() {
+      return appState.vessels.find(v => v.id === appState.targetVesselId);
+    }
+
+    /* =========================================================================
+       6. SIMULATION & ORBITAL PHYSICS
+       ========================================================================= */
+
+    function updateSimulation(dt) {
+      const active = getActiveVessel();
+
+      // PHYSICS SUB-STEPPING for highly accurate orbital integration
+      const subSteps = 10;
+      const subDt = dt / subSteps;
+
+      for (let s = 0; s < subSteps; s++) {
+        appState.vessels.forEach(vessel => {
+          if (vessel.isDocked && vessel.dockedToId) {
+            const parent = appState.vessels.find(v => v.id === vessel.dockedToId);
+            if (parent) {
+              vessel.position.copy(parent.position).add(new THREE.Vector3(0, 4, 0));
+              vessel.velocity.copy(parent.velocity);
+              return;
+            }
+          }
+
+          const rVec = vessel.position.clone();
+          const rDist = rVec.length();
+          const altitude = rDist - EARTH_RADIUS;
+          vessel.altitude = altitude;
+
+          // Gravity
+          const gravForceMag = G_MU / (rDist * rDist);
+          const gravAcc = rVec.clone().normalize().multiplyScalar(-gravForceMag);
+
+          // Rocket Thrust
+          const thrustAcc = new THREE.Vector3(0, 0, 0);
+          if (vessel.type === 'rocket' && vessel.fuel > 0 && vessel.throttle > 0) {
+            const localUp = new THREE.Vector3(0, 1, 0);
+            localUp.applyEuler(vessel.orientation);
+
+            // MASSIVELY NERFED THRUST & HEAVY GRAVITY:
+            // TWR is now tightly balanced. You MUST perform a gravity turn.
+            const basePower = (vessel.stage === 1 ? 125 : 55); 
+            const boosterMultiplier = 1 + (appState.rocketConfig.boosters * 0.15);
+            const engineMultiplier = 0.85 + (appState.rocketConfig.engines * 0.05);
+            
+            const maxThrust = basePower * engineMultiplier * (vessel.stage === 1 ? boosterMultiplier : 1.0);
+            const thrustMag = maxThrust * (vessel.throttle / 100);
+            thrustAcc.copy(localUp).multiplyScalar(thrustMag);
+
+            // Fuel burns much faster to bound total Delta-V and prevent infinite escaping
+            const burnRate = 5.5 * (vessel.throttle / 100) * subDt;
+            vessel.fuel = Math.max(0, vessel.fuel - burnRate);
+            if (vessel.fuel <= 0 && s === 0) { // Only trigger UI once per frame
+              vessel.throttle = 0;
+              if (vessel.id === appState.activeVesselId) {
+                setThrottle(0);
+                showToast("Fuel Depleted! Stage or coast.");
+              }
+            }
+          }
+
+          // Atmospheric Drag F_d = 0.5 * rho * v^2
+          const dragAcc = new THREE.Vector3(0, 0, 0);
+          if (altitude < ATMO_HEIGHT && altitude > 0) {
+            // Realistic exponential atmosphere decay (tuned so you don't hit a wall of air)
+            const atmoDensity = AIR_DENSITY_0 * Math.exp(-altitude / 160);
+            const speed = vessel.velocity.length();
+            if (speed > 0.1) {
+              const dragMag = 0.5 * atmoDensity * speed * speed;
+              dragAcc.copy(vessel.velocity).normalize().multiplyScalar(-dragMag);
+            }
+          }
+
+          const totalAcc = new THREE.Vector3();
+          totalAcc.add(gravAcc);
+          totalAcc.add(thrustAcc);
+          totalAcc.add(dragAcc);
+
+          // Pad Surface & Liftoff release check
+          const padSurfaceAltitude = 3.6;
+          const isOnPad = (altitude <= padSurfaceAltitude + 0.3) && (vessel.position.x * vessel.position.x + vessel.position.z * vessel.position.z < 100);
+          const groundThreshold = isOnPad ? padSurfaceAltitude : 0.2;
+
+          if (altitude <= groundThreshold) {
+            const upComponent = totalAcc.dot(rVec.clone().normalize());
+            if (upComponent > 0) {
+              // Lift off!
+              vessel.velocity.addScaledVector(totalAcc, subDt);
+              vessel.position.addScaledVector(vessel.velocity, subDt);
+            } else {
+              // Pinned to surface by gravity
+              vessel.position.normalize().multiplyScalar(EARTH_RADIUS + groundThreshold);
+              vessel.velocity.set(0, 0, 0);
+            }
+          } else {
+            // Free flight integration (Euler-Cromer)
+            vessel.velocity.addScaledVector(totalAcc, subDt);
+            vessel.position.addScaledVector(vessel.velocity, subDt);
+          }
+
+          // Active Vessel Player Steering & Attitude Control
+          if (vessel.id === appState.activeVesselId && vessel.type === 'rocket' && appState.mode === 'FLIGHT' && !appState.isMapOpen) {
+            handleAttitudeControl(vessel, subDt);
+          }
+        });
+      } // End Physics Sub-steps
+
+      // Sync 3D Meshes & Visuals once per frame
+      appState.vessels.forEach(vessel => {
+        vessel.mesh.position.copy(vessel.position);
+        vessel.mesh.rotation.copy(vessel.orientation);
+
+        const flame = vessel.mesh.getObjectByName('ExhaustFlame');
+        if (flame) {
+          const throttleRatio = vessel.throttle / 100;
+          flame.scale.set(1, throttleRatio, 1);
+          flame.material.opacity = throttleRatio > 0 ? 0.85 : 0.0;
+        }
+
+        calculateOrbitalElements(vessel);
+
+        if (vessel.id === appState.activeVesselId && !vessel.isDocked) {
+          checkDockingProximity(vessel);
+        }
+      });
+
+      if (engineGain && !isAudioMuted && active) {
+        const targetGain = (active.throttle / 100) * 0.45;
+        engineGain.gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.08);
+      }
+
+      if (active) {
+        updateNavball(active);
+        updateTelemetryUI(active);
+      }
+
+      updateLaunchSitePinpointMarker();
+
+      if (appState.isMapOpen) {
+        renderMapOrbitalTrajectories();
+      }
+    }
+
+    function calculateOrbitalElements(vessel) {
+      const r = vessel.position.length();
+      const v = vessel.velocity.length();
+      const hVec = new THREE.Vector3().crossVectors(vessel.position, vessel.velocity);
+      const h = hVec.length();
+
+      const specificEnergy = (v * v) / 2 - G_MU / r;
+
+      if (specificEnergy >= 0) {
+        vessel.apoapsis = Infinity;
+        vessel.periapsis = Math.round((h * h) / (G_MU * 2.2) - EARTH_RADIUS);
+        vessel.isOrbitStable = false;
+      } else {
+        const a = -G_MU / (2 * specificEnergy);
+        const eccVal = 1 + (2 * specificEnergy * h * h) / (G_MU * G_MU);
+        const e = Math.sqrt(Math.max(0, eccVal));
+
+        const r_pe = a * (1 - e);
+        const r_ap = a * (1 + e);
+
+        vessel.periapsis = Math.round(r_pe - EARTH_RADIUS);
+        vessel.apoapsis = Math.round(r_ap - EARTH_RADIUS);
+        
+        // Scale visual velocity to match realistic readouts (~7,600 m/s for LEO)
+        vessel.orbitalSpeed = Math.round(v * 10.0); 
+        vessel.isOrbitStable = vessel.periapsis >= STABLE_ORBIT_ALT;
+      }
+    }
+
+    function handleAttitudeControl(rocket, dt) {
+      const turnSpeed = appState.rcsEnabled ? 1.8 : 1.1;
+
+      if (appState.keys.w) rocket.orientation.x -= turnSpeed * dt;
+      if (appState.keys.s) rocket.orientation.x += turnSpeed * dt;
+      if (appState.keys.a) rocket.orientation.y += turnSpeed * dt;
+      if (appState.keys.d) rocket.orientation.y -= turnSpeed * dt;
+      if (appState.keys.q) rocket.orientation.z += turnSpeed * dt;
+      if (appState.keys.e) rocket.orientation.z -= turnSpeed * dt;
+
+      if (appState.rcsEnabled) {
+        const forward = new THREE.Vector3(0, 1, 0).applyEuler(rocket.orientation);
+        const right = new THREE.Vector3(1, 0, 0).applyEuler(rocket.orientation);
+        const up = new THREE.Vector3(0, 0, 1).applyEuler(rocket.orientation);
+        const rcsPower = 3.5 * dt;
+
+        if (appState.keys.i) rocket.velocity.addScaledVector(forward, rcsPower);
+        if (appState.keys.k) rocket.velocity.addScaledVector(forward, -rcsPower);
+        if (appState.keys.j) rocket.velocity.addScaledVector(right, -rcsPower);
+        if (appState.keys.l) rocket.velocity.addScaledVector(right, rcsPower);
+        if (appState.keys.u) rocket.velocity.addScaledVector(up, rcsPower);
+        if (appState.keys.o) rocket.velocity.addScaledVector(up, -rcsPower);
+      }
+    }
+
+    function checkDockingProximity(rocket) {
+      const stations = appState.vessels.filter(v => v.type === 'station' && v.id !== rocket.id);
+      if (stations.length === 0) return;
+
+      stations.forEach(station => {
+        const deltaPos = station.position.clone().sub(rocket.position);
+        const distance = deltaPos.length();
+        const relVel = station.velocity.clone().sub(rocket.velocity).length();
+
+        if (distance < 6.0 && relVel < 2.5) {
+          rocket.isDocked = true;
+          rocket.dockedToId = station.id;
+          rocket.throttle = 0;
+          setThrottle(0);
+
+          showToast(`SUCCESSFUL DOCKING WITH ${station.name}!`);
+          playDockChime();
+          updateFleetListUI();
+        }
+      });
+    }
+
+    function updateLaunchSitePinpointMarker() {
+      const tag = document.getElementById('hud-launch-beacon-tag');
+      if (!tag) return;
+
+      // Animate beacon rings in 3D
+      if (launchSiteBeaconGroup && appState.isLaunchBeaconVisible) {
+        const time = clock.getElapsedTime();
+        for (let r = 1; r <= 3; r++) {
+          const ring = launchSiteBeaconGroup.getObjectByName('BeaconRing_' + r);
+          if (ring) {
+            const scale = 1 + Math.sin(time * 3 + r) * 0.08;
+            ring.scale.set(scale, scale, scale);
+          }
+        }
+      }
+
+      // Check visibility of launchpad waypoint relative to camera
+      const beaconPos = LAUNCH_PAD_POS.clone();
+      const distToCam = camera.position.distanceTo(beaconPos);
+      const active = getActiveVessel();
+      const distFromCraft = active ? active.position.distanceTo(beaconPos) : distToCam;
+
+      // Project 3D coordinate to 2D screen coordinate
+      const screenPos = beaconPos.clone().project(camera);
+      const isBehind = screenPos.z > 1.0;
+
+      if (!appState.isLaunchBeaconVisible || isBehind) {
+        tag.classList.add('hidden');
+        return;
+      }
+
+      const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+
+      tag.classList.remove('hidden');
+      tag.style.left = `${x}px`;
+      tag.style.top = `${y}px`;
+
+      const distText = distFromCraft > 100 ? `${(distFromCraft / 10).toFixed(0)} km` : `${(distFromCraft * 100).toFixed(0)} m`;
+      document.getElementById('beacon-dist-text').textContent = `(${distText})`;
+    }
+
+    function centerCameraOnLaunchSite() {
+      if (appState.isMapOpen) {
+        mapCamAngleX = 0.8;
+        mapCamAngleY = 0.0;
+        mapCamDistance = 11000;
+        showToast("Centered map on Launch Complex Alpha");
+      }
+    }
+
+    /* =========================================================================
+       7. STATION DEPLOYMENT IN ORBIT
+       ========================================================================= */
+
+    let jettisonedDebris = [];
+
+    function deployPayloadAction() {
+      const active = getActiveVessel();
+      if (!active) return;
+
+      if (active.type !== 'rocket') {
+        showToast("Active vessel is already a space station!");
+        return;
+      }
+
+      if (active.isStationDeployed) {
+        showToast("Payload already deployed from this rocket.");
+        return;
+      }
+
+      if (active.altitude < 30) {
+        showToast("Climb to space above 30km to release payload!");
+        return;
+      }
+
+      const fairing = active.mesh.getObjectByName('FairingCone');
+      if (fairing) fairing.visible = false;
+      active.isFairingJettisoned = true;
+
+      const forwardDir = new THREE.Vector3(0, 1, 0).applyEuler(active.orientation);
+      const spawnPos = active.position.clone().addScaledVector(forwardDir, 12);
+      const releaseVel = active.velocity.clone().addScaledVector(forwardDir, 3.0);
+
+      // If at suborbital high altitude, boost horizontal speed so the station stays in orbit
+      if (active.altitude >= 60 && releaseVel.length() < 72) {
+        const upVec = active.position.clone().normalize();
+        const horizontalDir = forwardDir.clone().sub(upVec.clone().multiplyScalar(forwardDir.dot(upVec))).normalize();
+        if (horizontalDir.length() > 0.1) {
+          releaseVel.copy(horizontalDir.multiplyScalar(76));
+        }
+      }
+
+      let payloadMesh;
+      let payloadName = appState.stationBlueprint.name;
+
+      if (appState.rocketConfig.payloadType === 'capsule') {
+        payloadMesh = new THREE.Group();
+        const capGeo = new THREE.ConeGeometry(1.6, 3, 16);
+        const capMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.6 });
+        payloadMesh.add(new THREE.Mesh(capGeo, capMat));
+        payloadName = 'Vanguard Crew Ferry';
+      } else if (appState.rocketConfig.payloadType === 'probe') {
+        payloadMesh = new THREE.Group();
+        const coreGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
+        const coreMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.8 });
+        payloadMesh.add(new THREE.Mesh(coreGeo, coreMat));
+        payloadName = 'DeepSpace Science Probe';
+      } else {
+        payloadMesh = buildStationMesh(appState.stationBlueprint);
+      }
+
+      const newStation = createVessel(
+        'station',
+        payloadName,
+        spawnPos,
+        releaseVel,
+        payloadMesh
+      );
+
+      active.isStationDeployed = true;
+      document.getElementById('station-deploy-banner').classList.add('hidden');
+      document.getElementById('btn-deploy-payload').classList.add('opacity-40');
+
+      showToast(`PAYLOAD "${payloadName}" PLACED INTO ORBIT!`);
+      playDockChime();
+
+      appState.targetVesselId = newStation.id;
+      updateFleetListUI();
+    }
+
+    function autoCircularizeOrbit() {
+      const active = getActiveVessel();
+      if (!active) return;
+      
+      const targetAlt = Math.max(160, active.altitude);
+      active.position.normalize().multiplyScalar(EARTH_RADIUS + targetAlt);
+      
+      const r = EARTH_RADIUS + targetAlt;
+      // Exact circular orbital velocity for this altitude
+      const vCirc = Math.sqrt(G_MU / r); 
+      
+      let tangent = new THREE.Vector3(0, 0, 1).cross(active.position.clone().normalize()).normalize();
+      if (tangent.length() === 0) tangent.set(1, 0, 0);
+      active.velocity.copy(tangent.multiplyScalar(vCirc));
+      active.orientation.set(0, Math.atan2(tangent.x, tangent.z), 0);
+      
+      showToast(`ORBIT ASSIST: Circularized at ${targetAlt.toFixed(0)} km!`);
+      playTone(600, 0.3, 'sine');
+    }
+
+    /* =========================================================================
+       8. MODES & BUILDER PREVIEWS (EARTH ALWAYS VISIBLE)
+       ========================================================================= */
+
+    function setAppMode(mode) {
+      appState.mode = mode;
+      appState.isMapOpen = false;
+      document.getElementById('panel-map-overlay').classList.add('hidden');
+
+      ['station', 'rocket', 'flight'].forEach(m => {
+        const btn = document.getElementById('btn-mode-' + m);
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:bg-slate-800';
+      });
+
+      const activeBtn = document.getElementById('btn-mode-' + (mode === 'STATION_BUILDER' ? 'station' : mode === 'ROCKET_BUILDER' ? 'rocket' : 'flight'));
+      activeBtn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-sky-600 text-white glow-cyan';
+
+      document.getElementById('panel-station-builder').classList.add('hidden');
+      document.getElementById('panel-rocket-builder').classList.add('hidden');
+      document.getElementById('panel-flight-hud').classList.add('hidden');
+
+      if (stationBuilderGroup) stationBuilderGroup.visible = false;
+      if (rocketBuilderGroup) rocketBuilderGroup.visible = false;
+
+      // Ensure Earth and Launchpad are visible in all modes
+      earthMesh.visible = true;
+      atmosphereMesh.visible = true;
+      launchpadGroup.visible = true;
+
+      if (mode === 'STATION_BUILDER') {
+        document.getElementById('panel-station-builder').classList.remove('hidden');
+        document.getElementById('sim-status-text').textContent = 'CAD STATION DESIGNER // EARTH ORBIT';
+        renderStationBuilderPreview();
+      } else if (mode === 'ROCKET_BUILDER') {
+        document.getElementById('panel-rocket-builder').classList.remove('hidden');
+        document.getElementById('sim-status-text').textContent = 'VEHICLE ASSEMBLY BUILDING // COMPLEX 39-A';
+        renderRocketBuilderPreview();
+      } else {
+        document.getElementById('panel-flight-hud').classList.remove('hidden');
+        document.getElementById('sim-status-text').textContent = 'ACTIVE FLIGHT MISSION CONTROL';
+      }
+    }
+
+    function toggleMapView() {
+      appState.isMapOpen = !appState.isMapOpen;
+      const overlay = document.getElementById('panel-map-overlay');
+      const flightHud = document.getElementById('panel-flight-hud');
+
+      if (appState.isMapOpen) {
+        overlay.classList.remove('hidden');
+        if (flightHud) flightHud.classList.add('hidden');
+        updateFleetListUI();
+      } else {
+        overlay.classList.add('hidden');
+        if (appState.mode === 'FLIGHT' && flightHud) {
+          flightHud.classList.remove('hidden');
+        }
+      }
+    }
+
+    function toggleSettingsModal() {
+      appState.isSettingsOpen = !appState.isSettingsOpen;
+      const modal = document.getElementById('modal-settings');
+      if (appState.isSettingsOpen) {
+        modal.classList.remove('hidden');
+      } else {
+        modal.classList.add('hidden');
+      }
+    }
+
+    function setTimeWarp(factor) {
+      appState.timeWarp = factor;
+      document.querySelectorAll('.time-warp-btn').forEach(btn => {
+        if (parseInt(btn.getAttribute('data-warp')) === factor) {
+          btn.className = 'time-warp-btn px-2 py-0.5 text-xs rounded-lg bg-sky-600 text-white font-bold';
+        } else {
+          btn.className = 'time-warp-btn px-2 py-0.5 text-xs rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700';
+        }
+      });
+      showToast(`Time Warp: ${factor}x`);
+    }
+
+    // Unified Throttle Function syncing both inputs and graphic HUD
+    function setThrottle(val) {
+      initAudio();
+      appState.throttle = Math.max(0, Math.min(100, parseInt(val) || 0));
+      const active = getActiveVessel();
+      if (active && active.type === 'rocket') {
+        active.throttle = appState.throttle;
+      }
+
+      // Sync Graphic Throttle Display & Sliders
+      const graphicFill = document.getElementById('graphic-throttle-fill');
+      if (graphicFill) graphicFill.style.width = `${appState.throttle}%`;
+
+      const masterSlider = document.getElementById('master-graphic-slider');
+      if (masterSlider) masterSlider.value = appState.throttle;
+
+      const thrustKnText = document.getElementById('graphic-thrust-kn');
+      if (thrustKnText) {
+        const estKn = (appState.throttle * 42.5).toFixed(1);
+        thrustKnText.textContent = `${estKn} kN`;
+      }
+
+      // Update vertical legacy slider
+      const vSlider = document.getElementById('vertical-throttle-slider');
+      if (vSlider) vSlider.value = appState.throttle;
+      const vPct = document.getElementById('vertical-throttle-pct');
+      if (vPct) vPct.textContent = `${appState.throttle}%`;
+    }
+
+    function triggerStaging() {
+      initAudio();
+      const active = getActiveVessel();
+      if (!active || active.type !== 'rocket') return;
+
+      playTone(180, 0.4, 'sawtooth');
+
+      if (active.stage === 1) {
+        active.stage = 2;
+        for (let b = 0; b < 4; b++) {
+          const booster = active.mesh.getObjectByName('Booster_' + b);
+          if (booster) booster.visible = false;
+        }
+        document.getElementById('stage-number').textContent = '2 of 2 (Upper Stage)';
+        showToast('STAGE 1 SEPARATION! VACUUM ENGINE ARMED.');
+      } else if (!active.isFairingJettisoned) {
+        const fairing = active.mesh.getObjectByName('FairingCone');
+        if (fairing) fairing.visible = false;
+        active.isFairingJettisoned = true;
+        showToast('FAIRING JETTISONED! PRESS [P] TO DEPLOY PAYLOAD.');
+      } else {
+        deployPayloadAction();
+      }
+    }
+
+    function toggleRCS() {
+      appState.rcsEnabled = !appState.rcsEnabled;
+      const btn = document.getElementById('btn-rcs');
+      btn.textContent = 'RCS: ' + (appState.rcsEnabled ? 'ON' : 'OFF');
+      btn.className = appState.rcsEnabled
+        ? 'flex-1 py-1 bg-emerald-700 text-white rounded-lg text-[10px] font-bold'
+        : 'flex-1 py-1 bg-slate-800 text-slate-300 rounded-lg text-[10px] font-bold';
+      showToast('RCS: ' + (appState.rcsEnabled ? 'ENABLED' : 'DISABLED'));
+    }
+
+    function toggleSAS() {
+      appState.sasEnabled = !appState.sasEnabled;
+      const btn = document.getElementById('btn-sas');
+      const settingBtn = document.getElementById('setting-sas-btn');
+      btn.textContent = 'SAS: ' + (appState.sasEnabled ? 'ON' : 'OFF');
+      btn.className = appState.sasEnabled
+        ? 'flex-1 py-1 bg-sky-900 text-sky-300 rounded-lg text-[10px] font-bold'
+        : 'flex-1 py-1 bg-slate-800 text-slate-300 rounded-lg text-[10px] font-bold';
+      if (settingBtn) {
+        settingBtn.textContent = appState.sasEnabled ? 'Enabled' : 'Disabled';
+        settingBtn.className = appState.sasEnabled
+          ? 'px-3 py-1.5 rounded-xl bg-sky-600 text-white font-bold'
+          : 'px-3 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-bold';
+      }
+    }
+
+    function renderStationBuilderPreview() {
+      if (stationBuilderGroup) scene.remove(stationBuilderGroup);
+      stationBuilderGroup = buildStationMesh(appState.stationBlueprint);
+      // Place station at high orbital altitude with Earth clearly visible below
+      stationBuilderGroup.position.set(0, EARTH_RADIUS + 90, 0);
+      scene.add(stationBuilderGroup);
+      updateStationStats();
+    }
+
+    function addStationModule(type) {
+      const bp = appState.stationBlueprint;
+      const zOffset = (bp.modules.length % 2 === 0 ? 1 : -1) * (Math.floor(bp.modules.length / 2) * 3.2);
+      bp.modules.push({ type, position: [0, 0, zOffset], rot: [0, 0, 0] });
+      renderStationBuilderPreview();
+      playTone(440, 0.15, 'triangle');
+    }
+
+    function clearStationDesign() {
+      appState.stationBlueprint.modules = [{ type: 'core', position: [0, 0, 0], rot: [0, 0, 0] }];
+      renderStationBuilderPreview();
+    }
+
+    function updateStationStats() {
+      const count = appState.stationBlueprint.modules.length;
+      document.getElementById('station-module-count').textContent = `Modules: ${count}`;
+      document.getElementById('station-mass-val').textContent = (6 + count * 2.5).toFixed(1) + ' Tons';
+      const docks = appState.stationBlueprint.modules.filter(m => m.type === 'dock').length * 4;
+      document.getElementById('station-dock-val').textContent = `${Math.max(1, docks)} Ports`;
+      const power = appState.stationBlueprint.modules.filter(m => m.type === 'solar').length * 45;
+      document.getElementById('station-power-val').textContent = `${power} kW`;
+    }
+
+    function confirmStationBlueprint() {
+      const nameInput = document.getElementById('station-name-input').value.trim();
+      if (nameInput) appState.stationBlueprint.name = nameInput;
+      showToast(`Blueprint saved: "${appState.stationBlueprint.name}" packed!`);
+      setAppMode('ROCKET_BUILDER');
+    }
+
+    function renderRocketBuilderPreview() {
+      if (rocketBuilderGroup) scene.remove(rocketBuilderGroup);
+      rocketBuilderGroup = buildRocketMesh(appState.rocketConfig);
+      // Place on top of the launchpad on Earth
+      rocketBuilderGroup.position.copy(LAUNCH_PAD_POS);
+      scene.add(rocketBuilderGroup);
+    }
+
+    function updateRocketSpec() {
+      const boosters = parseInt(document.getElementById('slider-boosters').value);
+      const fuel = parseInt(document.getElementById('slider-fuel1').value);
+      const engines = parseInt(document.getElementById('slider-engines').value);
+      const payload = document.getElementById('select-payload').value;
+
+      appState.rocketConfig.boosters = boosters;
+      appState.rocketConfig.fuelLevel = fuel;
+      appState.rocketConfig.engines = engines;
+      appState.rocketConfig.payloadType = payload;
+
+      document.getElementById('val-boosters').textContent = `${boosters} Boosters`;
+      document.getElementById('val-fuel1').textContent = `${fuel}%`;
+      document.getElementById('val-engines').textContent = `${engines} Engines`;
+      document.getElementById('val-payload-status').textContent = payload === 'station' ? 'Custom Space Station' : 'Crew / Docking Ferry Vehicle';
+
+      const deltaV = Math.round(2200 + (fuel * 6) + (boosters * 180));
+      
+      // Calculate realistic display TWR against the crushing 98.0 surface gravity
+      const basePower = 125; 
+      const boosterMultiplier = 1 + (boosters * 0.15);
+      const engineMultiplier = 0.85 + (engines * 0.05);
+      const maxThrust = basePower * engineMultiplier * boosterMultiplier;
+      
+      const twr = (maxThrust / 98.0).toFixed(2); 
+
+      document.getElementById('spec-deltav').textContent = `${deltaV} m/s`;
+      document.getElementById('spec-twr').textContent = `${twr}`;
+
+      renderRocketBuilderPreview();
+    }
+
+    function applyRocketPreset(preset) {
+      if (preset === 'light') {
+        document.getElementById('slider-boosters').value = 0;
+        document.getElementById('slider-fuel1').value = 75;
+        document.getElementById('slider-engines').value = 1;
+      } else if (preset === 'medium') {
+        document.getElementById('slider-boosters').value = 2;
+        document.getElementById('slider-fuel1').value = 100;
+        document.getElementById('slider-engines').value = 3;
+      } else {
+        document.getElementById('slider-boosters').value = 4;
+        document.getElementById('slider-fuel1').value = 150;
+        document.getElementById('slider-engines').value = 5;
+      }
+      updateRocketSpec();
+    }
+
+    function rolloutToLaunchpad() {
+      const rocketMesh = buildRocketMesh(appState.rocketConfig);
+      rocketMesh.position.copy(LAUNCH_PAD_POS);
+
+      const rocketVessel = createVessel(
+        'rocket',
+        'Vanguard-' + (appState.vessels.length + 1),
+        LAUNCH_PAD_POS,
+        new THREE.Vector3(0, 0, 0),
+        rocketMesh
+      );
+
+      appState.activeVesselId = rocketVessel.id;
+      appState.mapSelectedVesselId = rocketVessel.id;
+      setThrottle(0);
+
+      showToast('ROCKET SECURED ON LAUNCHPAD COMPLEX ALPHA');
+      setAppMode('FLIGHT');
+      updateFleetListUI();
+    }
+
+    function spawnNewRocketAtLaunchpad() {
+      rolloutToLaunchpad();
+      toggleMapView();
+    }
+
+    function resetAllFleetToDefaults() {
+      initFleet();
+      toggleSettingsModal();
+      showToast('All craft recovered to launchpad inventory.');
+    }
+
+    /* =========================================================================
+       9. FLEET LIST UI & 3D TRAJECTORY PROJECTIONS
+       ========================================================================= */
+
+    function updateFleetListUI() {
+      const container = document.getElementById('fleet-list-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      document.getElementById('map-fleet-count').textContent = `${appState.vessels.length} Active`;
+
+      appState.vessels.forEach(vessel => {
+        const isCurrentActive = vessel.id === appState.activeVesselId;
+        const isTarget = vessel.id === appState.targetVesselId;
+        const isSelected = vessel.id === appState.mapSelectedVesselId;
+
+        const card = document.createElement('div');
+        card.className = `p-2 rounded-xl border transition cursor-pointer ${
+          isSelected ? 'bg-sky-950/80 border-sky-400' : 'bg-slate-900/60 border-slate-800 hover:border-slate-600'
+        }`;
+        card.onclick = () => selectVesselInMap(vessel.id);
+
+        card.innerHTML = `
+          <div class="flex justify-between items-center text-xs font-bold font-mono">
+            <span class="flex items-center gap-1.5 ${vessel.type === 'station' ? 'text-teal-300' : 'text-sky-400'}">
+              <i class="fa-solid ${vessel.type === 'station' ? 'fa-satellite' : 'fa-rocket'}"></i>
+              ${vessel.name}
+            </span>
+            ${isCurrentActive ? '<span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/40 px-1 py-0.5 rounded">ACTIVE</span>' : ''}
+            ${isTarget ? '<span class="text-[9px] bg-amber-950 text-amber-300 border border-amber-500/40 px-1 py-0.5 rounded">TARGET</span>' : ''}
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-400 font-mono mt-1">
+            <span>Alt: ${vessel.altitude.toFixed(0)} km</span>
+            <span>Ap: ${vessel.apoapsis > 5000 ? 'Esc' : vessel.apoapsis + 'km'}</span>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+
+      const selected = appState.vessels.find(v => v.id === appState.mapSelectedVesselId) || getActiveVessel();
+      if (selected) {
+        document.getElementById('map-selected-name').textContent = selected.name;
+        document.getElementById('map-selected-status').textContent = selected.isOrbitStable ? 'STABLE CIRCULAR ORBIT' : 'SUB-ORBITAL TRAJECTORY';
+        document.getElementById('map-orbit-ap').textContent = selected.apoapsis > 9000 ? 'Escape' : `${selected.apoapsis} km`;
+        document.getElementById('map-orbit-pe').textContent = `${selected.periapsis} km`;
+        document.getElementById('map-orbit-speed').textContent = `${selected.orbitalSpeed} m/s`;
+        
+        const distToPad = selected.position.distanceTo(LAUNCH_PAD_POS);
+        document.getElementById('map-launchpad-dist').textContent = `${distToPad.toFixed(0)} km`;
+      }
+    }
+
+    function selectVesselInMap(id) {
+      appState.mapSelectedVesselId = id;
+      updateFleetListUI();
+    }
+
+    function switchControlToSelectedVessel() {
+      if (!appState.mapSelectedVesselId) return;
+      appState.activeVesselId = appState.mapSelectedVesselId;
+      const vessel = getActiveVessel();
+      showToast(`Now Piloting: ${vessel.name}`);
+      toggleMapView();
+      setAppMode('FLIGHT');
+      updateFleetListUI();
+    }
+
+    function setVesselAsTarget() {
+      if (!appState.mapSelectedVesselId) return;
+      appState.targetVesselId = appState.mapSelectedVesselId;
+      const target = getTargetVessel();
+      showToast(`Rendezvous Target: ${target ? target.name : 'None'}`);
+      updateFleetListUI();
+    }
+
+    function cycleTargetVessel() {
+      const otherVessels = appState.vessels.filter(v => v.id !== appState.activeVesselId);
+      if (otherVessels.length === 0) {
+        showToast('No other craft in orbit to target.');
+        return;
+      }
+      const currentIndex = otherVessels.findIndex(v => v.id === appState.targetVesselId);
+      const nextIndex = (currentIndex + 1) % otherVessels.length;
+      appState.targetVesselId = otherVessels[nextIndex].id;
+      showToast(`Target: ${otherVessels[nextIndex].name}`);
+    }
+
+    function autoAlignToTarget() {
+      const active = getActiveVessel();
+      const target = getTargetVessel();
+      if (!active || !target) {
+        showToast('Select a target vessel in the Map view first!');
+        return;
+      }
+      const delta = target.position.clone().sub(active.position).normalize();
+      const targetEuler = new THREE.Euler().setFromVector3(delta);
+      active.orientation.copy(targetEuler);
+      showToast('SAS Aligned Prograde to Target Vector.');
+    }
+
+    // Render full multi-craft orbital trajectories predicting whole ellipses
+    function renderMapOrbitalTrajectories() {
+      if (!orbitLinesGroup) return;
+      while (orbitLinesGroup.children.length > 0) {
+        const obj = orbitLinesGroup.children[0];
+        orbitLinesGroup.remove(obj);
+      }
+
+      appState.vessels.forEach(vessel => {
+        // Skip rendering orbit lines for attached/docked modules
+        if (vessel.isDocked) return;
+
+        const points = [];
+        const rVec = vessel.position.clone();
+        const vVec = vessel.velocity.clone();
+        
+        const r = rVec.length();
+        const v = vVec.length();
+        
+        // Specific angular momentum (h)
+        const hVec = new THREE.Vector3().crossVectors(rVec, vVec);
+        const h = hVec.length();
+
+        // If angular momentum is near zero -> vertical ascent/descent (No horizontal curve)
+        if (h < 1e-3) {
+            points.push(rVec.clone());
+            points.push(rVec.clone().normalize().multiplyScalar(EARTH_RADIUS * 2));
+        } else {
+            // Eccentricity vector: eVec = (vVec x hVec) / G_MU - (rVec / r)
+            const eVec = new THREE.Vector3().crossVectors(vVec, hVec).divideScalar(G_MU).sub(rVec.clone().normalize());
+            const e = eVec.length();
+
+            // Semi-latus rectum
+            const p = (h * h) / G_MU; 
+
+            // Establish 3D basis vectors for the orbital plane
+            let u;
+            if (e > 1e-5) {
+                u = eVec.clone().normalize();
+            } else {
+                u = rVec.clone().normalize(); // Fallback for perfectly circular orbits
+            }
+            const vBasis = new THREE.Vector3().crossVectors(hVec.clone().normalize(), u).normalize();
+
+            // Evaluate Analytical Kepler Equation
+            if (e < 1.0) {
+                // Closed Elliptical Orbit
+                const steps = 180;
+                for (let i = 0; i <= steps; i++) {
+                    const theta = (i / steps) * Math.PI * 2;
+                    const r_theta = p / (1 + e * Math.cos(theta));
+                    const point = new THREE.Vector3()
+                        .addScaledVector(u, r_theta * Math.cos(theta))
+                        .addScaledVector(vBasis, r_theta * Math.sin(theta));
+                    points.push(point);
+                }
+            } else {
+                // Hyperbolic Escape Trajectory
+                const maxAngle = Math.acos(-1/e) * 0.95; // Approach asymptotes safely
+                const steps = 120;
+                for(let i = -steps; i <= steps; i++) {
+                    const theta = (i / steps) * maxAngle;
+                    const r_theta = p / (1 + e * Math.cos(theta));
+                    
+                    // Stop drawing line if it shoots too far out into deep space
+                    if (r_theta > EARTH_RADIUS * 20) continue;
+                    
+                    const point = new THREE.Vector3()
+                        .addScaledVector(u, r_theta * Math.cos(theta))
+                        .addScaledVector(vBasis, r_theta * Math.sin(theta));
+                    points.push(point);
+                }
+            }
+        }
+
+        if (points.length > 2) {
+          const orbitGeo = new THREE.BufferGeometry().setFromPoints(points);
+          let orbitColor = 0x0284c7; // default cyan
+          if (vessel.type === 'station') orbitColor = 0x10b981; // emerald
+          if (vessel.id === appState.targetVesselId) orbitColor = 0xf59e0b; // amber
+
+          const orbitMat = new THREE.LineBasicMaterial({ color: orbitColor, linewidth: 2 });
+          const line = new THREE.Line(orbitGeo, orbitMat);
+          orbitLinesGroup.add(line);
+        }
+      });
+    }
+
+    let navCtx = null;
+    function initNavball() {
+      const canvas = document.getElementById('navball-canvas');
+      if (canvas) navCtx = canvas.getContext('2d');
+    }
+
+    function updateNavball(rocket) {
+      if (!navCtx) return;
+      const w = 105;
+      const h = 105;
+      const cx = w / 2;
+      const cy = h / 2;
+
+      navCtx.clearRect(0, 0, w, h);
+
+      const pitch = rocket.orientation.x;
+      const roll = rocket.orientation.z;
+      const yaw = rocket.orientation.y;
+
+      navCtx.save();
+      navCtx.translate(cx, cy);
+      navCtx.rotate(-roll);
+
+      // PERFECT CIRCLE CLIP to keep the horizon strictly inside the gauge
+      navCtx.beginPath();
+      navCtx.arc(0, 0, 50, 0, Math.PI * 2);
+      navCtx.clip();
+
+      navCtx.fillStyle = '#0284c7';
+      navCtx.fillRect(-60, -60, 120, 120);
+
+      const pitchOffset = Math.sin(pitch) * 44;
+      navCtx.fillStyle = '#78350f';
+      navCtx.beginPath();
+      // Draw a massive ground rect that fills everything below the horizon line regardless of pitch
+      navCtx.rect(-60, pitchOffset, 120, 120);
+      navCtx.fill();
+
+      navCtx.strokeStyle = '#ffffff';
+      navCtx.lineWidth = 2;
+      navCtx.beginPath();
+      navCtx.moveTo(-60, pitchOffset);
+      navCtx.lineTo(60, pitchOffset);
+      navCtx.stroke();
+
+      navCtx.restore();
+
+      // Aircraft Center Reticle
+      navCtx.strokeStyle = '#f59e0b';
+      navCtx.lineWidth = 2.5;
+      navCtx.beginPath();
+      navCtx.moveTo(cx - 16, cy);
+      navCtx.lineTo(cx - 5, cy);
+      navCtx.lineTo(cx, cy + 4);
+      navCtx.lineTo(cx + 5, cy);
+      navCtx.lineTo(cx + 16, cy);
+      navCtx.stroke();
+
+      document.getElementById('val-pitch').textContent = ((-pitch * 180) / Math.PI).toFixed(0) + '°';
+      document.getElementById('val-yaw').textContent = (((yaw * 180) / Math.PI) % 360).toFixed(0) + '°';
+      document.getElementById('val-roll').textContent = (((roll * 180) / Math.PI) % 360).toFixed(0) + '°';
+    }
+
+    function updateTelemetryUI(active) {
+      document.getElementById('tel-alt').textContent = `${active.altitude.toFixed(1)} km`;
+      document.getElementById('tel-vel').textContent = `${active.orbitalSpeed} m/s`;
+      document.getElementById('tel-ap').textContent = active.apoapsis > 9000 ? 'Escape' : `${active.apoapsis} km`;
+      document.getElementById('tel-pe').textContent = `${active.periapsis} km`;
+
+      const atmoPct = Math.max(0, Math.min(100, (1 - active.altitude / ATMO_HEIGHT) * 100));
+      document.getElementById('tel-atmo').textContent = `${atmoPct.toFixed(0)}% (${atmoPct > 10 ? 'Dense' : 'Vacuum'})`;
+
+      const modeLabel = document.getElementById('telemetry-mode');
+      if (active.isOrbitStable) {
+        modeLabel.textContent = 'CIRCULAR ORBIT';
+        modeLabel.className = 'text-emerald-400 font-bold';
+      } else {
+        modeLabel.textContent = 'SUB-ORBITAL';
+        modeLabel.className = 'text-amber-400 font-bold';
+      }
+
+      document.getElementById('fuel-bar').style.width = active.fuel + '%';
+      const fuelPct = document.getElementById('fuel-pct-text');
+      if (fuelPct) fuelPct.textContent = `FUEL: ${active.fuel.toFixed(0)}%`;
+
+      const deployPrompt = document.getElementById('station-deploy-banner');
+      if (active.type === 'rocket' && (active.altitude > 80 || active.isOrbitStable) && !active.isStationDeployed) {
+        deployPrompt.classList.remove('hidden');
+      } else {
+        deployPrompt.classList.add('hidden');
+      }
+
+      const target = getTargetVessel();
+      const targetPanel = document.getElementById('target-docking-panel');
+      if (target) {
+        targetPanel.classList.remove('opacity-50');
+        document.getElementById('dock-target-name').textContent = target.name;
+        const dist = active.position.distanceTo(target.position);
+        document.getElementById('dock-dist').textContent = dist > 100 ? `${(dist / 10).toFixed(1)} km` : `${(dist * 100).toFixed(0)} m`;
+        const relSpeed = active.velocity.clone().sub(target.velocity).length() * 100;
+        document.getElementById('dock-relvel').textContent = `${relSpeed.toFixed(1)} m/s`;
+        document.getElementById('dock-align').textContent = dist < 20 ? 'ALIGNMENT BEAM' : 'APPROACHING';
+      } else {
+        document.getElementById('dock-target-name').textContent = 'No Target';
+        document.getElementById('dock-dist').textContent = '--';
+        document.getElementById('dock-relvel').textContent = '--';
+        document.getElementById('dock-align').textContent = '--';
+      }
+    }
+
+    /* =========================================================================
+       11. KEYBOARD & MOUSE CONTROLS
+       ========================================================================= */
+
+    function setupKeyboardControls() {
+      window.addEventListener('keydown', e => {
+        initAudio();
+        const key = e.key.toLowerCase();
+
+        if (key === 'w') appState.keys.w = true;
+        if (key === 's') appState.keys.s = true;
+        if (key === 'a') appState.keys.a = true;
+        if (key === 'd') appState.keys.d = true;
+        if (key === 'q') appState.keys.q = true;
+        if (key === 'e') appState.keys.e = true;
+        if (key === 'i') appState.keys.i = true;
+        if (key === 'k') appState.keys.k = true;
+        if (key === 'j') appState.keys.j = true;
+        if (key === 'l') appState.keys.l = true;
+        if (key === 'u') appState.keys.u = true;
+        if (key === 'o') autoCircularizeOrbit();
+        if (key === 'p') deployPayloadAction();
+        if (key === 'r') toggleRCS();
+        if (e.key === 'Shift') setThrottle(Math.min(100, appState.throttle + 5));
+        if (e.key === 'Control') setThrottle(Math.max(0, appState.throttle - 5));
+        if (e.key === ' ') {
+          e.preventDefault();
+          triggerStaging();
+        }
+        if (key === 'm') toggleMapView();
+      });
+
+      window.addEventListener('keyup', e => {
+        const key = e.key.toLowerCase();
+        if (key === 'w') appState.keys.w = false;
+        if (key === 's') appState.keys.s = false;
+        if (key === 'a') appState.keys.a = false;
+        if (key === 'd') appState.keys.d = false;
+        if (key === 'q') appState.keys.q = false;
+        if (key === 'e') appState.keys.e = false;
+        if (key === 'i') appState.keys.i = false;
+        if (key === 'k') appState.keys.k = false;
+        if (key === 'j') appState.keys.j = false;
+        if (key === 'l') appState.keys.l = false;
+        if (key === 'u') appState.keys.u = false;
+      });
+    }
+
+    function setupInteractions() {
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      window.addEventListener('mousedown', e => {
+        if (e.target.closest('.hud-panel') || e.target.closest('#modal-settings') || e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        isDraggingMouse = true;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+
+      window.addEventListener('mousemove', e => {
+        if (!isDraggingMouse) return;
+        const dx = e.clientX - prevMouseX;
+        const dy = e.clientY - prevMouseY;
+
+        if (appState.isMapOpen) {
+          mapCamAngleY -= dx * 0.005;
+          mapCamAngleX = Math.max(-1.45, Math.min(1.45, mapCamAngleX + dy * 0.005));
+        } else {
+          camAngleY -= dx * 0.005;
+          camAngleX = Math.max(-1.4, Math.min(1.4, camAngleX + dy * 0.005));
+        }
+
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDraggingMouse = false;
+      });
+
+      window.addEventListener('wheel', e => {
+        if (appState.isMapOpen) {
+          mapCamDistance = Math.max(7500, Math.min(65000, mapCamDistance + e.deltaY * 15));
+        } else {
+          camDistance = Math.max(8, Math.min(250, camDistance + e.deltaY * 0.05));
+        }
+      });
+    }
+
+    /* =========================================================================
+       12. CAMERA RIGGING & MAIN ANIMATION LOOP
+       ========================================================================= */
+
+    function updateCamera() {
+      // 1. Station Designer: Orbiting above Earth, showing station with Earth curve in background
+      if (appState.mode === 'STATION_BUILDER' && stationBuilderGroup) {
+        const center = stationBuilderGroup.position;
+        camera.position.set(
+          center.x + Math.sin(camAngleY) * 24,
+          center.y + 12 + Math.sin(camAngleX) * 14,
+          center.z + Math.cos(camAngleY) * 24
+        );
+        camera.lookAt(center);
+        return;
+      }
+
+      // 2. Rocket VAB: Positioned directly on the launch pad at Earth's North pole
+      if (appState.mode === 'ROCKET_BUILDER' && rocketBuilderGroup) {
+        const center = LAUNCH_PAD_POS.clone().add(new THREE.Vector3(0, 14, 0));
+        camera.position.set(
+          center.x + Math.sin(camAngleY) * 36,
+          center.y + 8 + Math.sin(camAngleX) * 18,
+          center.z + Math.cos(camAngleY) * 36
+        );
+        camera.lookAt(center);
+        return;
+      }
+
+      // 3. Orbital Map View: Free 3D orbit around Earth & fleet
+      if (appState.isMapOpen) {
+        const selected = appState.vessels.find(v => v.id === appState.mapSelectedVesselId);
+        const lookCenter = (selected && mapCamDistance < 1400) ? selected.position.clone() : new THREE.Vector3(0, 0, 0);
+
+        const mx = mapCamDistance * Math.sin(mapCamAngleY) * Math.cos(mapCamAngleX);
+        const my = mapCamDistance * Math.sin(mapCamAngleX);
+        const mz = mapCamDistance * Math.cos(mapCamAngleY) * Math.cos(mapCamAngleX);
+
+        camera.position.set(lookCenter.x + mx, lookCenter.y + my, lookCenter.z + mz);
+        camera.lookAt(lookCenter);
+        return;
+      }
+
+      // 4. Flight Simulation: Third-Person Follow Camera over Earth
+      const active = getActiveVessel();
+      if (!active) return;
+
+      const targetPos = active.position.clone();
+      const offsetX = camDistance * Math.sin(camAngleY) * Math.cos(camAngleX);
+      const offsetY = camDistance * Math.sin(camAngleX);
+      const offsetZ = camDistance * Math.cos(camAngleY) * Math.cos(camAngleX);
+
+      camera.position.set(
+        targetPos.x + offsetX,
+        targetPos.y + offsetY + 2,
+        targetPos.z + offsetZ
+      );
+      camera.lookAt(targetPos);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const rawDt = clock.getDelta();
+      const dt = Math.min(0.1, rawDt) * appState.timeWarp;
+
+      if (earthMesh) {
+        earthMesh.rotation.y += 0.0004 * dt;
+      }
+
+      // Animate Sun Corona
+      if (sunCoronaMesh) {
+        sunCoronaMesh.rotation.z += 0.001 * dt;
+      }
+
+      // Update positions of celestial planets (Moon, Mars, Venus, Jupiter)
+      celestialPlanets.forEach(p => {
+        p.angle += p.data.orbitSpeed * dt * 20;
+        const px = Math.cos(p.angle) * p.data.distance;
+        const pz = Math.sin(p.angle) * p.data.distance;
+        const py = Math.sin(p.angle * 2) * (p.data.distance * 0.08);
+        p.mesh.position.set(px, py, pz);
+        p.mesh.rotation.y += 0.002 * dt;
+      });
+
+      updateSimulation(dt);
+      updateCamera();
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function () {
+      initThree();
+      initFleet();
+      setAppMode('FLIGHT');
+      animate();
+    };
+  </script>
+</body>
+</html>
